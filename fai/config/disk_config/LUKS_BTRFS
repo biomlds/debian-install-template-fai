@@ -1,0 +1,9 @@
+# disk1 is mapped to the interactively selected kernel device by partition.WORKSTATION.
+# /boot lives in encrypted @root so snapshots contain matching kernels/initramfs.
+disk_config disk1 disklabel:gpt bootable:1 fstabkey:uuid align-at:1M
+p=efi      /boot/efi   1G   vfat rw,umask=0077 createopts="-n EFI"
+p=          -           8G-  -    -
+
+disk_config cryptsetup
+# GRUB 2.12 can unlock LUKS2 only with PBKDF2 keyslots; see docs/GRUB.md.
+luks - disk1.2 btrfs - createopts="-L debian-root" lukscreateopts="--type=luks2 --pbkdf=pbkdf2"

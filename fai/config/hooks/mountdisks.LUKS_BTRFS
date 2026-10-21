@@ -1,0 +1,46 @@
+#!/bin/bash
+set -Eeuo pipefail
+: "${LOGDIR:=/tmp/fai}"
+: "${target:=/target}"
+crypttab=$LOGDIR/crypttab
+fstab=$LOGDIR/fstab
+[ -s "$crypttab" ] || { echo "Missing setup-storage crypttab." >&2; exit 1; }
+[ -s "$fstab" ] || { echo "Missing setup-storage fstab." >&2; exit 1; }
+read -r crypt_name _crypt_device _crypt_key _crypt_options < <(awk '!/^($|#)/ {print; exit}' "$crypttab")
+mapper=/dev/mapper/$crypt_name
+[ -b "$mapper" ] || { echo "Encrypted mapper is not open: $mapper" >&2; exit 1; }
+efi_spec=$(awk '$2 == "/boot/efi" {print $1; exit}' "$fstab")
+[ -n "$efi_spec" ] || { echo "No EFI entry in setup-storage fstab." >&2; exit 1; }
+
+top=/run/fai/btrfs-top
+mkdir -p "$top" "$target"
+mountpoint -q "$top" || mount -o subvolid=5 "$mapper" "$top"
+for subvol in @root @home @snapshots; do
+    if [ ! -e "$top/$subvol" ]; then
+        btrfs subvolume create "$top/$subvol"
+    elif ! btrfs subvolume show "$top/$subvol" >/dev/null 2>&1; then
+        echo "$top/$subvol exists but is not a subvolume." >&2
+        exit 1
+    fi
+done
+root_id=$(btrfs subvolume show "$top/@root" | awk -F': *' '/Subvolume ID:/ {print $2; exit}')
+btrfs subvolume set-default "$root_id" "$top"
+umount "$top"
+
+mount -o noatime,compress=zstd:3,subvol=@root "$mapper" "$target"
+mkdir -p "$target/home" "$target/.snapshots" "$target/boot/efi"
+mount -o noatime,compress=zstd:3,subvol=@home "$mapper" "$target/home"
+mount -o noatime,compress=zstd:3,subvol=@snapshots "$mapper" "$target/.snapshots"
+mount "$efi_spec" "$target/boot/efi"
+
+root_uuid=$(blkid -s UUID -o value "$mapper")
+efi_device=$(findfs "$efi_spec")
+efi_uuid=$(blkid -s UUID -o value "$efi_device")
+cat > "$LOGDIR/fstab" <<FSTAB
+UUID=$root_uuid /           btrfs noatime,compress=zstd:3,subvol=@root       0 0
+UUID=$root_uuid /home       btrfs noatime,compress=zstd:3,subvol=@home       0 0
+UUID=$root_uuid /.snapshots btrfs noatime,compress=zstd:3,subvol=@snapshots  0 0
+UUID=$efi_uuid  /boot/efi   vfat  umask=0077                                0 1
+FSTAB
+if [ -f "$LOGDIR/disk_var.sh" ]; then sed -i '/^ROOT_PARTITION=/d' "$LOGDIR/disk_var.sh"; fi
+printf 'ROOT_PARTITION=%q\n' "$mapper" >> "$LOGDIR/disk_var.sh"

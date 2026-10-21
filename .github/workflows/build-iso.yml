@@ -1,0 +1,40 @@
+name: build-fai-iso
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends fai-server fai-client xorriso rsync git ca-certificates python3 python3-yaml shellcheck cryptsetup
+      - name: Validate public policy
+        run: make validate
+      - name: Build pinned host tools in ephemeral runner
+        run: ./tools/build-host-tools.sh --native
+      - name: Build credential-free FAI ISO
+        run: ./tools/build-iso.sh "$PWD/build/debian-fai-workstation.iso"
+      - name: Verify output checksums and credential boundary
+        run: |
+          sha256sum -c build/debian-fai-workstation.iso.sha256
+          test -s fai/config/assets/HOST_TOOLS.sha256
+          ! find . -type f -not -path './.git/*' -print0 | xargs -0 grep -IlE 'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian-fai-workstation-${{ github.ref_name }}
+          path: |
+            build/debian-fai-workstation.iso
+            build/debian-fai-workstation.iso.sha256
+            fai/config/assets/HOST_TOOLS.sha256
+            fai/config/assets/HOST_TOOLS.versions
+          if-no-files-found: error
+          retention-days: 14

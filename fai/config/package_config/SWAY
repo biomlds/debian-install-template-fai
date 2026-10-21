@@ -1,0 +1,24 @@
+PACKAGES install
+bemenu
+fonts-font-awesome
+fonts-noto
+fonts-noto-color-emoji
+foot
+grim
+lightdm
+mako-notifier
+network-manager-gnome
+pavucontrol
+pipewire
+pipewire-audio
+slurp
+sway
+sway-backgrounds
+swayidle
+swaylock
+waybar
+wireplumber
+wl-clipboard
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-desktop-portal-wlr

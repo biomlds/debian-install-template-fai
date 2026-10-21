@@ -1,0 +1,4 @@
+PACKAGES install
+aptitude
+console-setup
+keyboard-configuration

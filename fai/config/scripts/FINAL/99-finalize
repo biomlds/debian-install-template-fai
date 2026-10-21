@@ -1,0 +1,20 @@
+#!/bin/bash
+set -Eeuo pipefail
+fcopy -riM /etc/workstation-bootstrap
+fcopy -riM /etc/profile.d
+fcopy -riM /etc/systemd/system
+fcopy -riM /usr/local/sbin
+fcopy -riM /usr/local/lib/workstation-firstboot
+chmod 0755 "$target/usr/local/sbin/"{workstation-firstboot,update-grub-secure,grub-security-check,incus-init-workstation,workstation-verify}
+chmod 0755 "$target/usr/local/lib/workstation-firstboot/workstation_firstboot.py"
+install -d -m 0700 "$target/var/lib/workstation-firstboot"
+install -d -m 0700 "$target/var/log/fai"
+install -m 0600 "${LOGDIR:-/tmp/fai}/disk-selection.json" "$target/var/log/fai/disk-selection.json"
+install -m 0600 "${LOGDIR:-/tmp/fai}/disk-selection.log" "$target/var/log/fai/disk-selection.log"
+touch "$target/var/lib/workstation-firstboot/pending"
+chmod 0600 "$target/var/lib/workstation-firstboot/pending"
+$ROOTCMD update-initramfs -u -k all
+$ROOTCMD update-grub
+$ROOTCMD systemctl daemon-reload
+$ROOTCMD systemctl enable ssh.service
+$ROOTCMD systemctl enable fwupd-refresh.timer unattended-upgrades.service 2>/dev/null || true

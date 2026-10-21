@@ -1,0 +1,27 @@
+config: {}
+networks:
+  - name: incusbr0
+    type: bridge
+    config:
+      ipv4.address: auto
+      ipv4.nat: "true"
+      ipv6.address: none
+storage_pools:
+  - name: default
+    driver: dir
+    config:
+      source: /var/lib/incus/storage-pools/default
+profiles:
+  - name: default
+    description: Single default profile; VM limits are applied per instance
+    config: {}
+    devices:
+      eth0:
+        name: eth0
+        network: incusbr0
+        type: nic
+      root:
+        path: /
+        pool: default
+        type: disk
+cluster: null

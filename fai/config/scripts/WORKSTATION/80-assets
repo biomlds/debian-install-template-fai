@@ -1,0 +1,13 @@
+#!/bin/bash
+set -Eeuo pipefail
+assets=$FAI/assets
+install -d -m 0755 "$target/usr/local/share/workstation-bootstrap" "$target/usr/local/bin" "$target/usr/local/src"
+rsync -a "$assets/chezmoi/" "$target/usr/local/share/workstation-bootstrap/chezmoi/"
+rsync -a "$assets/incus/" "$target/usr/local/share/workstation-bootstrap/incus/"
+for tool in chezmoi yazi ya; do
+    [ ! -x "$assets/bin/$tool" ] || install -m 0755 "$assets/bin/$tool" "$target/usr/local/bin/$tool"
+done
+if [ -d "$assets/vendor/grub-btrfs" ]; then
+    rsync -a "$assets/vendor/grub-btrfs/" "$target/usr/local/src/grub-btrfs/"
+    $ROOTCMD make -C /usr/local/src/grub-btrfs install
+fi

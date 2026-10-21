@@ -1,0 +1,4 @@
+#!/bin/bash
+set -Eeuo pipefail
+$ROOTCMD systemctl enable NetworkManager.service lightdm.service
+$ROOTCMD systemctl set-default graphical.target

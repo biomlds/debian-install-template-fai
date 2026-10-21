@@ -1,0 +1,6 @@
+PACKAGES install
+btrfs-progs
+cryptsetup
+cryptsetup-initramfs
+initramfs-tools
+snapper

@@ -1,0 +1,14 @@
+#!/bin/bash
+set -Eeuo pipefail
+[ "$EUID" -eq 0 ] || { echo "Run as root." >&2; exit 1; }
+preseed=/usr/local/share/workstation-bootstrap/incus/preseed.yaml
+[ -s "$preseed" ] || { echo "Missing Incus preseed." >&2; exit 1; }
+if incus storage list --format csv -c n 2>/dev/null | grep -q .; then
+    echo "Incus already initialized; preserving current configuration."
+else
+    install -d -m 0711 /var/lib/incus/storage-pools/default
+    incus admin init --preseed < "$preseed"
+fi
+incus network show incusbr0 >/dev/null
+incus storage show default >/dev/null
+incus profile show default >/dev/null

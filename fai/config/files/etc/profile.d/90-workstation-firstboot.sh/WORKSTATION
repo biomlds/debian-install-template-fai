@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ -f /var/lib/workstation-firstboot/pending ]; then
+    printf '%s\n' \
+      'WARNING: permanent workstation setup is incomplete.' \
+      'Run: sudo workstation-firstboot apply --help' \
+      'Temporary provisioning and LUKS credentials remain active.'
+fi

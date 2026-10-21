@@ -1,0 +1,46 @@
+#!/bin/bash
+set -Eeuo pipefail
+[ "$EUID" -eq 0 ] || { echo "Run as root." >&2; exit 1; }
+[ -x /etc/grub.d/01_workstation_users ] || { echo "GRUB credentials are not configured." >&2; exit 1; }
+update-grub >/dev/null
+python3 - <<'PY'
+from pathlib import Path
+import os, re, tempfile
+p=Path('/boot/grub/grub.cfg')
+text=p.read_text()
+lines=[]
+unrestricted=0
+for line in text.splitlines():
+    stripped=line.lstrip()
+    if stripped.startswith('menuentry '):
+        title_match=re.search(r"menuentry ['\"]([^'\"]+)", stripped)
+        title=title_match.group(1) if title_match else ''
+        normal=title in {'Debian GNU/Linux', 'Debian GNU/Linux (workstation)'}
+        sensitive=any(word in title.lower() for word in ('advanced', 'recovery', 'snapshot', 'firmware'))
+        line=line.replace(' --unrestricted', '')
+        if normal and not sensitive:
+            line=line.replace(' {', ' --unrestricted {', 1)
+            unrestricted += 1
+    lines.append(line)
+new='\n'.join(lines)+'\n'
+if unrestricted != 1:
+    raise SystemExit(f'expected exactly one unrestricted normal entry; found {unrestricted}')
+for line in new.splitlines():
+    if 'menuentry ' in line and '--unrestricted' in line:
+        low=line.lower()
+        if any(word in low for word in ('advanced','recovery','snapshot','firmware')):
+            raise SystemExit('sensitive GRUB entry became unrestricted')
+if 'set superusers=' not in new or 'password_pbkdf2 ' not in new:
+    raise SystemExit('GRUB authentication directives missing')
+fd,name=tempfile.mkstemp(prefix='.grub.cfg.', dir=p.parent)
+try:
+    os.fchmod(fd,0o600)
+    with os.fdopen(fd,'w') as f:
+        f.write(new); f.flush(); os.fsync(f.fileno())
+    os.replace(name,p)
+    os.chmod(p,0o600)
+finally:
+    try: os.unlink(name)
+    except FileNotFoundError: pass
+PY
+/usr/local/sbin/grub-security-check

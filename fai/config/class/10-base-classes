@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+[ "$(uname -m)" = x86_64 ] || { echo "Only amd64 is supported." >&2; exit 1; }
+[ -d /sys/firmware/efi ] || { echo "UEFI firmware is required." >&2; exit 1; }
+printf '%s\n' "DEBIAN TRIXIE AMD64 UEFI GRUB_EFI FAIBASE"

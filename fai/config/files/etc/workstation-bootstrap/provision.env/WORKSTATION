@@ -1,0 +1,3 @@
+PROVISION_USER=provision
+STATE_DIR=/var/lib/workstation-firstboot
+LUKS_METADATA=/etc/workstation-bootstrap/luks-bootstrap.json

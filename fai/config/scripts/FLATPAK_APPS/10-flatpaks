@@ -1,0 +1,5 @@
+#!/bin/bash
+set -Eeuo pipefail
+$ROOTCMD flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+$ROOTCMD flatpak install --system --noninteractive --or-update flathub \
+  com.brave.Browser com.visualstudio.code org.cryptomator.Cryptomator

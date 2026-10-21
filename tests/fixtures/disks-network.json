@@ -1,0 +1,19 @@
+{
+  "cmdline": "ip=dhcp root=/dev/nfs nfsroot=192.0.2.10:/srv/fai/nfsroot",
+  "by_id": {
+    "/dev/disk/by-id/virtio-DISPOSABLE-TEST-DISK": "/dev/vda"
+  },
+  "mounts": [
+    {"source": "192.0.2.10:/srv/fai/nfsroot", "target": "/", "fstype": "nfs", "options": "ro"}
+  ],
+  "lsblk": {
+    "blockdevices": [
+      {
+        "name": "/dev/vda", "kname": "vda", "path": "/dev/vda", "type": "disk",
+        "size": 68719476736, "model": "Virtio Block Device", "serial": "DISPOSABLE-TEST-DISK",
+        "wwn": "", "tran": "virtio", "rm": 0, "ro": 0, "rota": 0,
+        "maj:min": "252:0", "mountpoints": [null]
+      }
+    ]
+  }
+}

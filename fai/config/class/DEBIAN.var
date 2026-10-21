@@ -1,0 +1,8 @@
+release=trixie
+apt_cdn=https://deb.debian.org
+security_cdn=https://security.debian.org
+secsuite=trixie-security
+kernelname=linux-image-amd64
+CONSOLEFONT=
+KEYMAP=us
+MODULESLIST="usbhid psmouse"

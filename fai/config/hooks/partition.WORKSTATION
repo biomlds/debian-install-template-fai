@@ -1,0 +1,36 @@
+#!/bin/bash
+set -Eeuo pipefail
+umask 077
+: "${FAI:?FAI config-space path is required}"
+: "${LOGDIR:=/tmp/fai}"
+selector=$FAI/assets/disk-selection/disk_selector.py
+selection=$LOGDIR/disk-selection.json
+selection_env=$LOGDIR/disk-selection.env
+config=$FAI/disk_config/LUKS_BTRFS
+
+[ -x "$selector" ] || { echo "Disk selector is missing or not executable: $selector" >&2; exit 1; }
+[ -r "$config" ] || { echo "Disk configuration is missing: $config" >&2; exit 1; }
+install -d -m 0700 "$LOGDIR"
+
+# This hook replaces FAI's standard partition task so selection can happen before
+# setup-storage. It fails closed on missing TTY, cancellation, EOF, or any check.
+"$selector" select --output "$selection" --env-output "$selection_env" \
+    2>&1 | tee "$LOGDIR/disk-selection.log"
+
+# The selector already revalidates once after persistence. Repeat it as the last
+# operation before setup-storage to minimize the selection-to-destruction race.
+"$selector" revalidate --selection "$selection" \
+    2>&1 | tee -a "$LOGDIR/disk-selection.log"
+
+# shellcheck disable=SC1090
+source "$selection_env"
+export disklist BOOT_DEVICE PHYSICAL_BOOT_DEVICES
+
+setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"
+[ -s "$LOGDIR/disk_var.sh" ] || { echo "setup-storage did not create disk_var.sh" >&2; exit 1; }
+
+# setup-storage derives these values from disk1; make the independently selected
+# bootloader target explicit for every later script. Split disks are rejected.
+sed -i '/^BOOT_DEVICE=/d;/^PHYSICAL_BOOT_DEVICES=/d' "$LOGDIR/disk_var.sh"
+printf 'BOOT_DEVICE=%q\nPHYSICAL_BOOT_DEVICES=%q\n' \
+    "$FAI_SELECTED_BOOT_KERNEL" "$FAI_SELECTED_BOOT_KERNEL" >> "$LOGDIR/disk_var.sh"

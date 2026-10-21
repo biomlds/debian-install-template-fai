@@ -1,0 +1,31 @@
+#!/bin/bash
+set -Eeuo pipefail
+selection_env=${LOGDIR:-/tmp/fai}/disk-selection.env
+[ -s "$selection_env" ] || { echo "Missing persisted bootloader selection." >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$selection_env"
+[ "$FAI_SELECTED_BOOT_STABLE" = "$FAI_SELECTED_OS_STABLE" ] || {
+    echo "Split bootloader and OS disks are unsupported." >&2; exit 1;
+}
+[ "$(readlink -f "$FAI_SELECTED_BOOT_STABLE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "Bootloader disk stable identity changed." >&2; exit 1;
+}
+if [ -s "${LOGDIR:-/tmp/fai}/disk_var.sh" ]; then
+    # shellcheck disable=SC1090
+    source "${LOGDIR:-/tmp/fai}/disk_var.sh"
+fi
+[ "$(readlink -f "${BOOT_DEVICE:-}")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "FAI BOOT_DEVICE does not match the selected bootloader disk." >&2; exit 1;
+}
+mountpoint -q "$target/boot/efi" || { echo "/boot/efi is not mounted." >&2; exit 1; }
+efi_source=$(findmnt -n -o SOURCE "$target/boot/efi")
+efi_disk=$(lsblk -sno PATH,TYPE "$efi_source" | awk '$2=="disk" {print $1; exit}')
+[ -n "$efi_disk" ] || { echo "Cannot identify the physical disk backing the ESP." >&2; exit 1; }
+[ "$(readlink -f "$efi_disk")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "Mounted ESP is not on the selected bootloader disk." >&2; exit 1;
+}
+fcopy -iM /etc/default/grub.d/40-workstation.cfg
+$ROOTCMD update-initramfs -u -k all
+$ROOTCMD grub-install --target=x86_64-efi --efi-directory=/boot/efi \
+    --bootloader-id=debian --recheck
+$ROOTCMD update-grub

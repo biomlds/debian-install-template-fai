@@ -1,0 +1,8 @@
+min_version = "2026.10.0"
+[tools]
+python = "3.13"
+uv = "latest"
+[env]
+_.python.venv = { path = ".venv", create = true }
+[tasks.doctor]
+run = "python --version && uv --version && samtools --version | head -n1 && bcftools --version | head -n1"

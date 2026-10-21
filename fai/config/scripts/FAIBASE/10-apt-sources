@@ -1,0 +1,5 @@
+#!/bin/bash
+set -Eeuo pipefail
+fcopy -iM /etc/apt/sources.list.d/debian.sources
+rm -f "$target/etc/apt/sources.list"
+$ROOTCMD apt-get update

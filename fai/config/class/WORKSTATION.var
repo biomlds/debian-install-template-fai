@@ -1,0 +1,36 @@
+# Public machine policy only. Never put permanent credentials here.
+PROVISION_USER=provision
+PROVISION_FULLNAME='Temporary workstation provisioning account'
+PROVISION_PASSWORD_HASH_FILE=/run/fai/bootstrap/provision.password.hash
+PROVISION_AUTHORIZED_KEYS_FILE=/run/fai/bootstrap/provision.authorized_keys
+BOOTSTRAP_LUKS_FILE=/run/fai/bootstrap/luks.bootstrap.passphrase
+TIMEZONE=America/Edmonton
+LOCALE=en_CA.UTF-8
+KEYMAP=us
+
+# Preserve setup-storage's generated key only until 10-bootstrap-key replaces it.
+FAI_KEEP_CRYPTKEYFILE=1
+
+# Disk and bootloader targets are selected interactively by
+# hooks/partition.WORKSTATION immediately before setup-storage. There is no
+# production kernel-command-line disk override.
+
+for secret in "$PROVISION_PASSWORD_HASH_FILE" "$BOOTSTRAP_LUKS_FILE"; do
+    [ -s "$secret" ] || { echo "Missing bootstrap input: $secret" >&2; return 1 2>/dev/null || exit 1; }
+done
+[ "$(wc -l < "$BOOTSTRAP_LUKS_FILE")" -eq 0 ] || {
+    echo "Bootstrap LUKS passphrase must have no trailing newline." >&2
+    return 1 2>/dev/null || exit 1
+}
+case $(stat -c %a "$PROVISION_PASSWORD_HASH_FILE") in
+    600|400) ;;
+    *) echo "Unsafe provisioning hash permissions." >&2; return 1 2>/dev/null || exit 1;;
+esac
+case $(stat -c %a "$BOOTSTRAP_LUKS_FILE") in
+    600|400) ;;
+    *) echo "Unsafe LUKS bootstrap permissions." >&2; return 1 2>/dev/null || exit 1;;
+esac
+
+export PROVISION_USER PROVISION_FULLNAME PROVISION_PASSWORD_HASH_FILE
+export PROVISION_AUTHORIZED_KEYS_FILE BOOTSTRAP_LUKS_FILE
+export TIMEZONE LOCALE KEYMAP FAI_KEEP_CRYPTKEYFILE

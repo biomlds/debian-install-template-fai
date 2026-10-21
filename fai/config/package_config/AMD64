@@ -1,0 +1,6 @@
+PACKAGES install
+linux-image-amd64
+firmware-linux
+firmware-misc-nonfree
+intel-microcode
+amd64-microcode

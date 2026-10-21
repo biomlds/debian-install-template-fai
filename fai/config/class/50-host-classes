@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+printf '%s\n' "WORKSTATION LUKS_BTRFS SWAY BACKUP INCUS FLATPAK_APPS FINAL"

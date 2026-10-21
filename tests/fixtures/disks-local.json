@@ -1,0 +1,52 @@
+{
+  "cmdline": "boot=live root=live:CDLABEL=FAI_CD quiet",
+  "by_id": {
+    "/dev/disk/by-id/ata-WorkstationDisk_SN-OS-001": "/dev/sda",
+    "/dev/disk/by-id/wwn-0x5000c500os001": "/dev/sda",
+    "/dev/disk/by-id/usb-FAI_Installer_MEDIA-001": "/dev/sdb"
+  },
+  "mounts": [
+    {"source": "/dev/sdb1", "target": "/run/live/medium", "fstype": "iso9660", "options": "ro"},
+    {"source": "overlay", "target": "/", "fstype": "overlay", "options": "rw"},
+    {"source": "/dev/nvme0n1p1", "target": "/data", "fstype": "ext4", "options": "rw"}
+  ],
+  "lsblk": {
+    "blockdevices": [
+      {
+        "name": "/dev/sda", "kname": "sda", "path": "/dev/sda", "type": "disk",
+        "size": 512110190592, "model": "Workstation Disk", "serial": "SN-OS-001",
+        "wwn": "0x5000c500os001", "tran": "sata", "rm": 0, "ro": 0, "rota": 0,
+        "maj:min": "8:0", "mountpoints": [null],
+        "children": [
+          {"name": "/dev/sda1", "kname": "sda1", "path": "/dev/sda1", "type": "part",
+           "size": 1073741824, "pkname": "sda", "fstype": "ext4", "label": "OLDROOT", "mountpoints": [null]}
+        ]
+      },
+      {
+        "name": "/dev/sdb", "kname": "sdb", "path": "/dev/sdb", "type": "disk",
+        "size": 16000000000, "model": "FAI USB", "serial": "MEDIA-001", "wwn": "",
+        "tran": "usb", "rm": 1, "ro": 0, "rota": 0, "maj:min": "8:16", "mountpoints": [null],
+        "children": [
+          {"name": "/dev/sdb1", "kname": "sdb1", "path": "/dev/sdb1", "type": "part",
+           "size": 4000000000, "pkname": "sdb", "fstype": "iso9660", "label": "FAI_CD",
+           "mountpoints": ["/run/live/medium"]}
+        ]
+      },
+      {
+        "name": "/dev/nvme0n1", "kname": "nvme0n1", "path": "/dev/nvme0n1", "type": "disk",
+        "size": 1000204886016, "model": "Mounted NVMe", "serial": "NVME-MOUNTED", "wwn": "eui.mounted",
+        "tran": "nvme", "rm": 0, "ro": 0, "rota": 0, "maj:min": "259:0", "mountpoints": [null],
+        "children": [
+          {"name": "/dev/nvme0n1p1", "kname": "nvme0n1p1", "path": "/dev/nvme0n1p1", "type": "part",
+           "size": 999000000000, "pkname": "nvme0n1", "fstype": "ext4", "label": "DATA", "mountpoints": ["/data"]}
+        ]
+      },
+      {"name": "/dev/loop0", "kname": "loop0", "path": "/dev/loop0", "type": "loop", "size": 2000000000, "mountpoints": ["/run/live/rootfs"]},
+      {"name": "/dev/zram0", "kname": "zram0", "path": "/dev/zram0", "type": "disk", "size": 8000000000, "rm": 0, "ro": 0, "mountpoints": [null]},
+      {"name": "/dev/ram0", "kname": "ram0", "path": "/dev/ram0", "type": "disk", "size": 16000000000, "rm": 0, "ro": 0, "mountpoints": [null]},
+      {"name": "/dev/dm-0", "kname": "dm-0", "path": "/dev/dm-0", "type": "disk", "size": 50000000000, "rm": 0, "ro": 0, "mountpoints": [null]},
+      {"name": "/dev/sr1", "kname": "sr1", "path": "/dev/sr1", "type": "disk", "size": 16000000000, "rm": 1, "ro": 0, "mountpoints": [null]},
+      {"name": "/dev/sr0", "kname": "sr0", "path": "/dev/sr0", "type": "rom", "size": 4000000000, "rm": 1, "ro": 1, "mountpoints": [null]}
+    ]
+  }
+}

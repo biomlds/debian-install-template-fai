@@ -1,0 +1,2 @@
+FAI_CONFIG_SRC=file:///srv/fai/config
+LOGUSER=fai

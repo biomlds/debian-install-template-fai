@@ -1,0 +1,10 @@
+min_version = "2026.10.0"
+[tools]
+python = "3.13"
+node = "24"
+uv = "latest"
+[env]
+_.python.venv = { path = ".venv", create = true }
+UV_LINK_MODE = "copy"
+[tasks.doctor]
+run = "python --version && node --version && uv --version"

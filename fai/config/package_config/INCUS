@@ -1,0 +1,7 @@
+PACKAGES install
+bridge-utils
+dnsmasq-base
+incus
+incus-client
+qemu-system-x86
+uidmap

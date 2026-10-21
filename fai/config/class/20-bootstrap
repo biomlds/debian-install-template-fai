@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+mountpoint=/run/fai/bootstrap
+source=/dev/disk/by-label/FAI-BOOTSTRAP
+mountpoint -q "$mountpoint" 2>/dev/null && exit 0
+[ -e "$source" ] || { echo "Missing removable filesystem labelled FAI-BOOTSTRAP." >&2; exit 1; }
+mkdir -p "$mountpoint"
+mount -o ro,nosuid,nodev,noexec,umask=0077 "$source" "$mountpoint" 2>/dev/null || \
+    mount -o ro,nosuid,nodev,noexec "$source" "$mountpoint"

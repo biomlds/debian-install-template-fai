@@ -1,0 +1,7 @@
+# GitHub Actions and supply chain
+
+`validate.yml` installs FAI/cryptsetup validators in Debian trixie, runs syntax/static/consistency tests, executes mocked local-media/network-boot disk filtering tests, exercises LUKS rotation on a regular file, generates a manifest, and scans for credential material.
+
+`build-iso.yml` runs only on manual dispatch or version tags. It uses a privileged ephemeral Debian runner because FAI image construction needs mount capabilities. It compiles pinned chezmoi and Yazi versions without putting Go/Rust on the installed host, fetches pinned grub-btrfs v4.14 and verifies the expected commit prefix, builds the ISO, scans its extracted content boundary, and uploads ISO/tool checksums.
+
+No GitHub secret is consumed. Public policy and first-boot schemas belong in the repository; bootstrap media and populated KeePassXC/YAML belong outside Git. Release/tag pinning reduces drift but is not bit-for-bit reproducibility across changing compiler/module ecosystems. The workflow currently references major-version GitHub Action tags; organizations requiring immutable CI dependencies should replace those tags with reviewed full commit IDs. VM bootstrap also downloads the mise installer over TLS while requesting a fixed version; mirror and checksum that installer internally if a stronger trust boundary is required. Preserve workflow logs, source revisions, ISO checksums, and generated host-tool checksums for each release.

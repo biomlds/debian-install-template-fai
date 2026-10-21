@@ -1,0 +1,8 @@
+#!/bin/bash
+set -Eeuo pipefail
+fcopy -iM /etc/snapper/configs/root
+fcopy -iM /etc/default/snapper
+chmod 0600 "$target/etc/snapper/configs/root"
+chmod 0750 "$target/.snapshots"
+$ROOTCMD systemctl enable snapper-timeline.timer snapper-cleanup.timer
+$ROOTCMD snapper -c root create --type single --description 'FAI installation baseline' --cleanup-algorithm number

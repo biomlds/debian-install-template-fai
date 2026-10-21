@@ -1,0 +1,30 @@
+PACKAGES install-norec FULL
+fai-nfsroot
+nfs-common
+rpcbind
+rsync
+ca-certificates
+curl
+openssh-client
+openssh-server
+btrfs-progs
+cryptsetup
+dosfstools
+e2fsprogs
+efibootmgr
+gdisk
+grub-efi-amd64-bin
+grub-efi-amd64-signed
+parted
+python3
+python3-yaml
+shim-signed
+systemd
+util-linux
+util-linux-extra
+xz-utils
+zstd
+
+PACKAGES install-norec NONFREE
+firmware-misc-nonfree
+firmware-realtek

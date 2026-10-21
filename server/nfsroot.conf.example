@@ -1,0 +1,5 @@
+FAI_DEBOOTSTRAP="trixie https://deb.debian.org/debian"
+FAI_DEBOOTSTRAP_OPTS="--arch=amd64"
+NFSROOT=/srv/fai/nfsroot
+TFTPROOT=/srv/tftp/fai
+FAI_CONFIGDIR=/srv/fai/config
