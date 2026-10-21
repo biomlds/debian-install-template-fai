@@ -1,27 +1,47 @@
 name: validate
+
 on:
   push:
   pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
-    container: debian:trixie
+
+    container:
+      image: debian:trixie
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Install validators
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends cryptsetup fai-setup-storage python3 python3-yaml shellcheck
+          apt-get install -y --no-install-recommends \
+            make \
+            cryptsetup \
+            fai-setup-storage \
+            python3 \
+            python3-yaml \
+            shellcheck \
+            yamllint
+
       - name: Validate repository
         run: make validate
+
       - name: Build and check manifest
         run: |
           make manifest
           sha256sum -c MANIFEST.sha256
+
       - name: Reject credential material
         run: |
-          ! grep -RIE 'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY|\$\{\{[[:space:]]*secrets\.' . \
-            --exclude-dir=.git --exclude='*.md'
+          ! grep -RIE \
+            'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY|\$\{\{[[:space:]]*secrets\.' \
+            . \
+            --exclude-dir=.git \
+            --exclude='*.md'
