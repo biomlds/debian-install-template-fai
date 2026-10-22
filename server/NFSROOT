@@ -15,6 +15,8 @@ efibootmgr
 gdisk
 grub-efi-amd64-bin
 grub-efi-amd64-signed
+grub-pc
+linux-image-amd64
 parted
 python3
 python3-yaml

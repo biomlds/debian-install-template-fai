@@ -16,7 +16,23 @@ jobs:
       - name: Install build dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends fai-server fai-client xorriso rsync git ca-certificates python3 python3-yaml shellcheck cryptsetup
+          apt-get install -y --no-install-recommends \
+            btrfs-progs \
+            ca-certificates \
+            cryptsetup \
+            dosfstools \
+            fai-client \
+            fai-server \
+            fai-setup-storage \
+            git \
+            make \
+            mtools \
+            python3 \
+            python3-yaml \
+            rsync \
+            shellcheck \
+            squashfs-tools \
+            xorriso
       - name: Validate public policy
         run: make validate
       - name: Build pinned host tools in ephemeral runner
