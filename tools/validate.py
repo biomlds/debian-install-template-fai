@@ -62,6 +62,19 @@ for rel in required:
     if not (CFG / rel).is_file():
         errors.append(f"missing {rel}")
 
+nfsroot = ROOT / "server/NFSROOT"
+if not nfsroot.is_file():
+    errors.append("missing server/NFSROOT")
+else:
+    nfsroot_packages: set[str] = set()
+    for raw in nfsroot.read_text().splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line and not line.startswith("PACKAGES "):
+            nfsroot_packages.update(line.split())
+    for package in ("dracut", "initramfs-tools-"):
+        if package not in nfsroot_packages:
+            errors.append(f"server/NFSROOT missing {package}")
+
 for path in ROOT.rglob("*"):
     if not path.is_file() or ignored(path) or path.name == "MANIFEST.sha256":
         continue

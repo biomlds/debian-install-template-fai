@@ -27,6 +27,14 @@ util-linux-extra
 xz-utils
 zstd
 
+PACKAGES install-norec
+# dracut replaces live-boot and initramfs-tools
+dracut live-boot- initramfs-tools-
+dracut-config-generic
+dracut-network isc-dhcp-client
+dracut-live
+dracut-squash
+
 PACKAGES install-norec NONFREE
 firmware-misc-nonfree
 firmware-realtek
