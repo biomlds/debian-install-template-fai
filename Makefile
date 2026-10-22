@@ -1,4 +1,6 @@
 SHELL := /bin/bash
+MANIFEST := MANIFEST.sha256
+MANIFEST_OUT ?= $(MANIFEST)
 
 .PHONY: validate test build-tools build-iso manifest manifest-check inventory archive
 
@@ -18,12 +20,45 @@ build-iso:
 	sudo ./tools/build-iso.sh
 
 manifest:
-	@set -o pipefail; { git ls-files -z | while IFS= read -r -d '' file; do \
-		[ "$$file" = "MANIFEST.sha256" ] || sha256sum -- "$$file"; \
-	done; } | LC_ALL=C sort -k2 > MANIFEST.sha256
+	@set -euo pipefail; { \
+		if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+			git ls-files -z; \
+		else \
+			find . -type f \
+				! -path './.git/*' \
+				! -name '.git' \
+				! -path './build/*' \
+				! -path '*/__pycache__/*' \
+				! -name '*.pyc' \
+				! -path './config/config.yaml' \
+				! -name '*.iso' \
+				! -name '*.iso.sha256' \
+				! -name '*.kdbx' \
+				! -name '*.key' \
+				! -name '*.passphrase' \
+				! -name '*.password' \
+				! -name 'MANIFEST.sha256' \
+				! -name 'HOST_TOOLS.sha256' \
+				! -name 'HOST_TOOLS.versions' \
+				! -name 'provision.password.hash' \
+				! -name 'provision.authorized_keys' \
+				! -path './fai/config/assets/bin/*' \
+				! -path './fai/config/assets/vendor/grub-btrfs/*' \
+				-print0; \
+		fi | while IFS= read -r -d '' file; do \
+			file="$${file#./}"; \
+			[ "$$file" = "$(MANIFEST)" ] || sha256sum -- "$$file"; \
+		done; } | LC_ALL=C sort -k2 > "$(MANIFEST_OUT)"
 
-manifest-check: manifest
-	git diff --exit-code -- MANIFEST.sha256
+manifest-check:
+	@set -e; tmp=$$(mktemp); \
+	trap 'rm -f -- "$$tmp"' EXIT; \
+	$(MAKE) --no-print-directory manifest MANIFEST_OUT="$$tmp"; \
+	if ! cmp -s -- "$(MANIFEST)" "$$tmp"; then \
+		echo "MANIFEST.sha256 is out of date; run 'make manifest'." >&2; \
+		diff -u -- "$(MANIFEST)" "$$tmp" >&2 || true; \
+		exit 1; \
+	fi
 
 inventory:
 	git ls-files

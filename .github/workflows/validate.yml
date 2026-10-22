@@ -36,11 +36,10 @@ jobs:
       - name: Validate repository
         run: make validate
 
-      - name: Build and check manifest
+      - name: Check manifest
         run: |
-          make manifest
+          make manifest-check
           sha256sum -c MANIFEST.sha256
-          git diff --exit-code -- MANIFEST.sha256
 
       - name: Reject credential material
         run: |

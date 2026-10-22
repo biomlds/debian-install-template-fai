@@ -11,6 +11,10 @@ python3 fai/config/assets/disk-selection/disk_selector.py \
 
 `make validate` runs Python compilation, shell syntax checks, YAML parsing, FAI/config consistency checks, mocked disk discovery/filtering, read-only first-boot input normalization, and a regular-file LUKS2 rotation test. `setup-storage -s` is required in CI and runs automatically when installed locally; the syntax check needs `setup-storage`, `cryptsetup`, `btrfs-progs`, `dosfstools`, and `parted`. Without `setup-storage`, local validation warns and performs static checks only. The LUKS test uses a temporary file in `/dev/shm` or `/tmp` and skips when `cryptsetup` is unavailable; it never opens or writes a block device. `.shellcheckrc` documents narrowly scoped exclusions for FAI-injected variables, the intentional `$ROOTCMD` command prefix, and intentional LUKS-slot word splitting.
 
+## Manifest
+
+Run `make manifest` after changing tracked files. `make manifest-check` regenerates the manifest in a temporary file and fails if it differs from the committed `MANIFEST.sha256`. Both targets use Git when available and fall back to a deterministic source-file scan in extracted source snapshots without `.git`; neither requires a Git checkout to verify the manifest.
+
 ## Interactive dry run
 
 Boot the FAI environment and open a shell before allowing installation to proceed. From the repository/config media run:
