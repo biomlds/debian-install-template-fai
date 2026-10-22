@@ -15,6 +15,7 @@ import json
 import os
 import pwd
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -83,11 +84,23 @@ def log(message: str) -> None:
 def run(cmd: list[str], *, input_data: bytes | None = None, check: bool = True,
         capture: bool = False, user: str | None = None) -> subprocess.CompletedProcess[bytes]:
     actual = cmd
+    cwd: str | None = None
     if user:
-        actual = ["runuser", "-u", user, "--", *cmd]
+        try:
+            account = pwd.getpwnam(user)
+        except KeyError as exc:
+            raise SetupError(f"Target account does not exist: {user}") from exc
+        cwd = account.pw_dir
+        shell = account.pw_shell or "/bin/bash"
+        actual = [
+            "runuser", "-u", user, "--", "env",
+            f"HOME={account.pw_dir}", f"USER={user}", f"LOGNAME={user}", f"SHELL={shell}",
+            *cmd,
+        ]
     proc = subprocess.run(
         actual,
         input=input_data,
+        cwd=cwd,
         stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
         stderr=subprocess.PIPE if capture else subprocess.DEVNULL,
         check=False,
@@ -186,12 +199,10 @@ class Model:
     chezmoi_branch: str
     borg_repository: str
     borg_ssh_key: Path | None
-    borg_passphrase: Path
     vorta_profile: str
     vorta_source_paths: list[str]
     vorta_excludes: Path | None
     cryptomator_vault: str
-    cryptomator_password: Path
     grub_username: str
     grub_password: Path
     luks_passphrase: Path
@@ -259,6 +270,8 @@ class YamlProvider(InputProvider):
         node: Any = self.data
         for part in path.split("."):
             node = node.get(part) if isinstance(node, dict) else None
+        if node is not None and not isinstance(node, dict):
+            die(f"{path} must be a mapping containing exactly one of value or file.")
         if isinstance(node, dict):
             keys = {key for key in ("value", "file") if node.get(key) not in (None, "")}
             if len(keys) != 1:
@@ -305,12 +318,10 @@ class YamlProvider(InputProvider):
             ssh_config=self.file("ssh.config_file", "ssh-config", required=False),
             chezmoi_repo=self.value("chezmoi.repository"), chezmoi_branch=self.value("chezmoi.branch", required=False, default="main"),
             borg_repository=self.value("borg.repository"), borg_ssh_key=self.file("borg.ssh_key_file", "borg-key", required=False),
-            borg_passphrase=self.secret("borg.passphrase", "borg-pass"),
             vorta_profile=self.value("vorta.profile_name", required=False, default="Personal files"),
             vorta_source_paths=self.list_value("vorta.source_paths", ["~"]),
             vorta_excludes=self.file("vorta.excludes_file", "vorta-excludes", required=False),
             cryptomator_vault=self.value("cryptomator.vault_path"),
-            cryptomator_password=self.secret("cryptomator.password", "cryptomator-pass"),
             grub_username=self.value("grub.username", required=False, default="workstation-admin"),
             grub_password=self.secret("grub.password", "grub-pass"),
             luks_passphrase=self.secret("luks.passphrase", "luks-pass"),
@@ -343,7 +354,8 @@ class KeePassProvider(InputProvider):
             ["keepassxc-cli", "show", "-q", "-a", attribute, str(self.database), f"{self.prefix}/{entry}"],
             input_data=self._stdin(), check=False, capture=True,
         )
-        value = proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else ""
+        raw = proc.stdout.decode(errors="replace") if proc.returncode == 0 else ""
+        value = raw.rstrip("\r\n") if secret else raw.strip()
         if not value and required:
             value = self.missing_text(f"KeePassXC {entry}.{attribute}", secret=secret)
         return value
@@ -383,12 +395,10 @@ class KeePassProvider(InputProvider):
             chezmoi_branch=self.attr("Chezmoi", "Branch", required=False) or "main",
             borg_repository=self.attr("Borg", "Repository"),
             borg_ssh_key=self.attachment("Borg", "borg_ed25519", "borg-key", required=False),
-            borg_passphrase=self.secret("Borg", "borg-pass"),
             vorta_profile=self.attr("Vorta", "ProfileName", required=False) or "Personal files",
             vorta_source_paths=[item.strip() for item in (self.attr("Vorta", "SourcePaths", required=False) or "~").split(",") if item.strip()],
             vorta_excludes=self.attachment("Vorta", "excludes.txt", "vorta-excludes", required=False),
             cryptomator_vault=self.attr("Cryptomator", "VaultPath"),
-            cryptomator_password=self.secret("Cryptomator", "cryptomator-pass"),
             grub_username=self.attr("GRUB", "Username", required=False) or "workstation-admin",
             grub_password=self.secret("GRUB", "grub-pass"),
             luks_passphrase=self.secret("LUKS", "luks-pass"),
@@ -417,6 +427,8 @@ def validate_model(model: Model) -> None:
         die("Git email is invalid.")
     if "sudo" not in model.groups or any(not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}", group) for group in model.groups):
         die("Account groups must be valid local group names and include sudo.")
+    if ":" in model.full_name:
+        die("Full name may not contain ':' because useradd uses it as a field separator.")
     if any("\n" in value or "\r" in value for value in (
         model.full_name, model.git_name, model.chezmoi_repo, model.borg_repository,
         model.vorta_profile, model.cryptomator_vault, model.grub_username,
@@ -426,15 +438,18 @@ def validate_model(model: Model) -> None:
         die("Vorta source paths must be a non-empty list without newlines.")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+_[A-Za-z0-9_.@-]+", model.locale):
         die("Locale is invalid.")
-    if not Path("/usr/share/zoneinfo", model.timezone).is_file():
+    zone_root = Path("/usr/share/zoneinfo").resolve()
+    if Path(model.timezone).is_absolute():
+        die("Timezone must be a relative name from the installed zoneinfo database.")
+    zone = (zone_root / model.timezone).resolve()
+    if not zone.is_file() or not zone.is_relative_to(zone_root):
         die("Timezone is not present in the installed zoneinfo database.")
     for path in (model.login_password, model.ssh_private_key, model.ssh_public_key,
-                 model.borg_passphrase, model.cryptomator_password,
                  model.grub_password, model.luks_passphrase):
         if not path or not path.is_file() or path.stat().st_size == 0:
             die("A required secret or key file is missing.")
     public = model.ssh_public_key.read_text(errors="strict").strip()
-    if not re.match(r"^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]+(?: .*)?$", public):
+    if not re.fullmatch(r"(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/]+={0,2}(?: [^\r\n]*)?", public):
         die("SSH public key has an unsupported format.")
     if len(model.login_password.read_bytes()) < 12 or len(model.luks_passphrase.read_bytes()) < 16 or len(model.grub_password.read_bytes()) < 12:
         die("Login/GRUB credentials require 12+ characters and LUKS requires 16+ characters.")
@@ -548,30 +563,49 @@ def setup_chezmoi(model: Model) -> None:
 def setup_backup(model: Model) -> None:
     pw = pwd.getpwnam(model.username)
     home = Path(pw.pw_dir)
+    home_resolved = home.resolve()
     config_dir = home / ".config/borg"
     config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    lines = [f"BORG_REPO={model.borg_repository}"]
+    ssh_dir = home / ".ssh"
+    ssh_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(ssh_dir, 0o700)
+    os.chown(ssh_dir, pw.pw_uid, pw.pw_gid)
+    lines = [f"BORG_REPO={shlex.quote(model.borg_repository)}"]
     if model.borg_ssh_key:
-        key_target = home / ".ssh/borg_ed25519"
+        key_target = ssh_dir / "borg_ed25519"
         shutil.copyfile(model.borg_ssh_key, key_target)
         os.chmod(key_target, 0o600)
         os.chown(key_target, pw.pw_uid, pw.pw_gid)
-        lines.append(f"BORG_RSH=ssh -i {key_target}")
+        lines.append("BORG_RSH=" + shlex.quote(f"ssh -i {key_target}"))
     env_file = config_dir / "bootstrap.env"
     atomic_write(env_file, ("\n".join(lines) + "\n").encode(), 0o600)
     os.chown(config_dir, pw.pw_uid, pw.pw_gid)
     os.chown(env_file, pw.pw_uid, pw.pw_gid)
-    vault = Path(os.path.expandvars(model.cryptomator_vault.replace("~", str(home), 1)))
+    raw_vault = model.cryptomator_vault
+    if raw_vault == "~":
+        vault = home
+    elif raw_vault.startswith("~/"):
+        vault = home / raw_vault[2:]
+    elif raw_vault == "$HOME":
+        vault = home
+    elif raw_vault.startswith("$HOME/"):
+        vault = home / raw_vault[6:]
+    else:
+        vault = Path(raw_vault)
+    if not vault.is_absolute():
+        vault = home / vault
+    vault = vault.resolve()
+    if not vault.is_relative_to(home_resolved):
+        die("Cryptomator vault path must resolve inside the permanent user's home.")
     vault.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(vault, 0o700)
     os.chown(vault, pw.pw_uid, pw.pw_gid)
-    # Vorta owns its SQLite/keyring state; first boot records repository data without
-    # persisting the Borg passphrase. Vorta imports it interactively after login.
     note = home / ".config/borg/VORTA-FIRST-LOGIN.txt"
     atomic_write(note, (
         f"Profile: {model.vorta_profile}\nRepository: {model.borg_repository}\n"
         f"Source paths: {', '.join(model.vorta_source_paths)}\n"
         "Open Vorta, add this repository and paths, and enter the Borg passphrase "
-        "from the selected first-boot source.\n"
+        "from your password manager after login.\n"
     ).encode(), 0o600)
     os.chown(note, pw.pw_uid, pw.pw_gid)
     if model.vorta_excludes:
@@ -743,6 +777,8 @@ def apply(args: argparse.Namespace) -> None:
         model = provider.model()
         validate_model(model)
         state = load_state()
+        if state.get("finalized") and not args.recovery:
+            die("First boot is already finalized; use --recovery only for documented recovery.")
         fingerprint = model.public_fingerprint()
         if state.get("fingerprint") not in (None, fingerprint):
             if not args.accept_config_change:
@@ -885,6 +921,9 @@ def main() -> int:
         elif args.command == "finalize":
             finalize(args)
         return 0
+    except KeyboardInterrupt:
+        print("Interrupted; secrets were cleaned and no destructive follow-up was attempted.", file=sys.stderr)
+        return 130
     except BlockingIOError:
         print("Another first-boot process holds the lock.", file=sys.stderr)
         return 3

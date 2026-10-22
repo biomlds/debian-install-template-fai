@@ -11,9 +11,9 @@ Create these entries and exact attributes/attachments:
 | `Git` | `Name`, `Email` | — |
 | `SSH` | — | `id_ed25519`, `id_ed25519.pub`, optional `config` |
 | `Chezmoi` | `Repository`, optional `Branch` | — |
-| `Borg` | `Repository`; Password = Borg passphrase | optional `borg_ed25519` |
+| `Borg` | `Repository` | optional `borg_ed25519` |
 | `Vorta` | optional `ProfileName`, comma-separated `SourcePaths` | optional `excludes.txt` |
-| `Cryptomator` | `VaultPath`; Password = vault credential | — |
+| `Cryptomator` | `VaultPath` | — |
 | `GRUB` | optional `Username`; Password = permanent GRUB password | — |
 | `LUKS` | Password = permanent LUKS passphrase | — |
 

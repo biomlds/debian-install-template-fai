@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -58,6 +60,40 @@ def test_unknown_boot_refused() -> None:
         assert "neither verified network boot" in str(exc)
     else:
         raise AssertionError("unknown boot source was accepted")
+
+
+def test_unknown_boot_with_media_refused() -> None:
+    data = fixture("disks-local.json")
+    try:
+        selector.eligible_disks(data["lsblk"], data["mounts"], "quiet", data["by_id"])
+    except selector.SelectionError as exc:
+        assert "neither verified network boot" in str(exc)
+    else:
+        raise AssertionError("unknown boot source was accepted despite media evidence")
+
+
+def test_malformed_record_refused() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "record.json"
+        path.write_text(json.dumps({"schema": 1}))
+        try:
+            selector.load_record(path)
+        except selector.SelectionError:
+            pass
+        else:
+            raise AssertionError("malformed persisted selection was accepted")
+
+
+def test_layout_is_shown_before_selection() -> None:
+    data = fixture("disks-local.json")
+    _, _, disks, _ = selector.eligible_disks(
+        data["lsblk"], data["mounts"], data["cmdline"], data["by_id"]
+    )
+    stream = io.StringIO()
+    selector.show_disks(disks, stream)
+    output = stream.getvalue()
+    assert "existing layout:" in output
+    assert "OLDROOT" in output
 
 
 def test_ambiguous_local_media_refused() -> None:

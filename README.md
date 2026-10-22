@@ -17,7 +17,6 @@ A ready-to-use FAI config space for a reproducible **Debian 13 Stable**, amd64/U
 
    ```bash
    make validate
-   python3 tests/test-disk-selector.py
    ```
 
 2. **Build host tools and ISO**
@@ -73,7 +72,7 @@ A ready-to-use FAI config space for a reproducible **Debian 13 Stable**, amd64/U
    sudo workstation-firstboot apply --source yaml --config /media/secure/config.yaml
    ```
 
-   The tool creates the permanent user, checks password/PAM and sudo, installs SSH/Git/chezmoi state, records Borg/Vorta and Cryptomator locations, installs a local GRUB PBKDF2 credential, and rotates LUKS. It is resumable: rerun the same command after correcting an error.
+   The tool creates the permanent user, checks password/PAM and sudo, installs SSH/Git/chezmoi state, records Borg/Vorta and Cryptomator locations, installs a local GRUB PBKDF2 credential, and rotates LUKS. It is resumable: rerun the same command after correcting an error. Borg and Cryptomator passphrases are entered after login, not during first boot.
 
 5. **Verify and finish**
 

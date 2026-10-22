@@ -194,7 +194,7 @@ def installation_media_disks(flat: list[dict[str, Any]], mounts: list[dict[str, 
                 evidence.add(disk)
     if mode == "local" and len(evidence) != 1:
         fail(f"Local live boot detected, but installation medium identity is ambiguous ({len(evidence)} matching disks).")
-    if mode == "unknown" and not evidence:
+    if mode == "unknown":
         fail("Boot source is neither verified network boot nor an identifiable local FAI medium.")
     if len(evidence) > 1:
         fail("More than one possible installation-medium disk was detected.")
@@ -365,6 +365,9 @@ def show_disks(disks: list[Disk], stream: TextIO) -> None:
             f"model={disk.model or '-'} serial={disk.serial or '-'}",
             file=stream,
         )
+        print("      existing layout:", file=stream)
+        for row in disk.summary:
+            print(f"        {row}", file=stream)
 
 
 def show_rejected(rejected: dict[str, str], stream: TextIO) -> None:
@@ -485,8 +488,29 @@ def load_record(path: Path) -> dict[str, Any]:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise SelectionError("Cannot load persisted disk selection.") from exc
-    if data.get("schema") != SCHEMA:
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
         fail("Unsupported disk-selection schema.")
+    if data.get("boot_source") not in {"local", "network"}:
+        fail("Persisted disk selection has an invalid boot source.")
+    if not isinstance(data.get("test_only_override"), bool):
+        fail("Persisted disk selection has an invalid test override flag.")
+    media = data.get("installation_media")
+    if not isinstance(media, list) or not all(isinstance(item, str) for item in media):
+        fail("Persisted disk selection has invalid installation media.")
+    for name in ("os_disk", "boot_disk"):
+        disk = data.get(name)
+        if not isinstance(disk, dict):
+            fail(f"Persisted disk selection is missing {name}.")
+        for key in ("kernel_path", "stable_path", "kname", "maj_min", "model", "serial", "wwn", "transport", "identity"):
+            if not isinstance(disk.get(key), str) or not disk[key]:
+                fail(f"Persisted disk selection has an invalid {name}.{key}.")
+        if not isinstance(disk.get("size"), int) or isinstance(disk["size"], bool) or disk["size"] <= 0:
+            fail(f"Persisted disk selection has an invalid {name}.size.")
+        if not isinstance(disk.get("removable"), bool) or not isinstance(disk.get("rotational"), bool):
+            fail(f"Persisted disk selection has invalid {name} device flags.")
+        summary = disk.get("summary")
+        if not isinstance(summary, list) or not all(isinstance(row, str) for row in summary):
+            fail(f"Persisted disk selection has an invalid {name}.summary.")
     return data
 
 

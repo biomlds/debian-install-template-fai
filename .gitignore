@@ -8,3 +8,10 @@ fai/config/assets/vendor/grub-btrfs/
 fai/config/assets/HOST_TOOLS.sha256
 fai/config/assets/HOST_TOOLS.versions
 config/config.yaml
+*.kdbx
+*.key
+*.passphrase
+*.password
+luks.bootstrap.passphrase
+provision.password.hash
+provision.authorized_keys

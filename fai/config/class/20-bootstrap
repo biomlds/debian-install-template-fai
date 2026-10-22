@@ -2,9 +2,29 @@
 set -eu
 
 mountpoint=/run/fai/bootstrap
-source=/dev/disk/by-label/FAI-BOOTSTRAP
-mountpoint -q "$mountpoint" 2>/dev/null && exit 0
-[ -e "$source" ] || { echo "Missing removable filesystem labelled FAI-BOOTSTRAP." >&2; exit 1; }
+sources=$(blkid -t LABEL=FAI-BOOTSTRAP -o device || true)
+count=$(printf '%s\n' "$sources" | sed '/^$/d' | wc -l)
+[ "$count" -eq 1 ] || { echo "Expected exactly one filesystem labelled FAI-BOOTSTRAP; found $count." >&2; exit 1; }
+source=$(printf '%s\n' "$sources" | sed -n '1p')
+
+if mountpoint -q "$mountpoint" 2>/dev/null; then
+    current=$(findmnt -rn -o SOURCE --target "$mountpoint")
+    [ "$(readlink -f "$current")" = "$(readlink -f "$source")" ] || {
+        echo "$mountpoint is already mounted from an unexpected source." >&2
+        exit 1
+    }
+    exit 0
+fi
+
 mkdir -p "$mountpoint"
-mount -o ro,nosuid,nodev,noexec,umask=0077 "$source" "$mountpoint" 2>/dev/null || \
-    mount -o ro,nosuid,nodev,noexec "$source" "$mountpoint"
+mount -o ro,nosuid,nodev,noexec "$source" "$mountpoint"
+for file in provision.password.hash luks.bootstrap.passphrase; do
+    [ -f "$mountpoint/$file" ] && [ ! -L "$mountpoint/$file" ] || {
+        echo "Bootstrap payload is missing or unsafe: $mountpoint/$file" >&2
+        exit 1
+    }
+done
+[ ! -L "$mountpoint/provision.authorized_keys" ] || {
+    echo "Bootstrap authorized_keys must not be a symlink." >&2
+    exit 1
+}

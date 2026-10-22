@@ -9,7 +9,7 @@ python3 fai/config/assets/disk-selection/disk_selector.py \
   inventory --fixture tests/fixtures/disks-local.json
 ```
 
-`make validate` runs Python compilation, shell syntax checks, YAML parsing, FAI/config consistency checks, mocked disk discovery/filtering, read-only first-boot input normalization, and—when installed—ShellCheck, `setup-storage -s`, and a regular-file LUKS2 rotation test. The latter creates a temporary file in `/dev/shm` or `/tmp`; it never opens or writes a block device. `.shellcheckrc` documents narrowly scoped exclusions for FAI-injected variables, the intentional `$ROOTCMD` command prefix, and intentional LUKS-slot word splitting.
+`make validate` runs Python compilation, shell syntax checks, YAML parsing, FAI/config consistency checks, mocked disk discovery/filtering, read-only first-boot input normalization, and a regular-file LUKS2 rotation test. `setup-storage -s` is required in CI and runs automatically when installed locally; the syntax check needs `setup-storage`, `cryptsetup`, `btrfs-progs`, `dosfstools`, and `parted`. Without `setup-storage`, local validation warns and performs static checks only. The LUKS test uses a temporary file in `/dev/shm` or `/tmp` and skips when `cryptsetup` is unavailable; it never opens or writes a block device. `.shellcheckrc` documents narrowly scoped exclusions for FAI-injected variables, the intentional `$ROOTCMD` command prefix, and intentional LUKS-slot word splitting.
 
 ## Interactive dry run
 

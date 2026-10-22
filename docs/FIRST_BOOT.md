@@ -14,6 +14,6 @@ sudo workstation-firstboot validate-input --source yaml --config /media/secure/c
 sudo workstation-firstboot apply --source yaml --config /media/secure/config.yaml
 ```
 
-Completed stages are recorded in `/var/lib/workstation-firstboot/state.json`. Re-running with the same source skips completed stages. A changed non-secret configuration fingerprint is rejected unless reviewed and acknowledged with `--accept-config-change`.
+Completed stages are recorded in `/var/lib/workstation-firstboot/state.json`. Re-running with the same source skips completed stages. A changed non-secret configuration fingerprint is rejected unless reviewed and acknowledged with `--accept-config-change`. Borg and Cryptomator passphrases are not first-boot inputs; enter them in Vorta and Cryptomator after login.
 
 After all stages pass, log out. Log in using the permanent account and verify sudo, SSH, desktop, and backups. Then run `sudo workstation-firstboot finalize`. Finalize refuses if any stage is incomplete, temporary LUKS material remains, GRUB checks fail, or it was not invoked through sudo by the permanent account. The old provisioning home is retained root-only for manual review.

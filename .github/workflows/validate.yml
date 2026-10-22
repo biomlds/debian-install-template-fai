@@ -22,13 +22,16 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            make \
+            btrfs-progs \
+            ca-certificates \
             cryptsetup \
+            dosfstools \
             fai-setup-storage \
+            git \
+            make \
             python3 \
             python3-yaml \
-            shellcheck \
-            yamllint
+            shellcheck
 
       - name: Validate repository
         run: make validate
@@ -37,11 +40,17 @@ jobs:
         run: |
           make manifest
           sha256sum -c MANIFEST.sha256
+          git diff --exit-code -- MANIFEST.sha256
 
       - name: Reject credential material
         run: |
-          ! grep -RIE \
+          if grep -RIlE \
             'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY|\$\{\{[[:space:]]*secrets\.' \
             . \
             --exclude-dir=.git \
-            --exclude='*.md'
+            --exclude-dir=.github \
+            --exclude='*.md' \
+            --exclude='validate.py'; then
+            echo "Credential material found in repository." >&2
+            exit 1
+          fi

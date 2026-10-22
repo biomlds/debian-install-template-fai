@@ -10,7 +10,10 @@ chmod 0440 /etc/sudoers.d/90-dev
 install -d -m 0755 -o dev -g dev /home/dev/workspace
 install -m 0644 -o dev -g dev "$config" /home/dev/workspace/mise.toml
 sudo -u dev -H bash -c 'curl -fsSL https://mise.run | MISE_VERSION=2026.10.0 sh'
-printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' 'eval "$(mise activate bash)"' >> /home/dev/.bashrc
+cat >> /home/dev/.bashrc <<'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+eval "$(mise activate bash)"
+EOF
 chown dev:dev /home/dev/.bashrc
 sudo -u dev -H bash -lc 'export PATH="$HOME/.local/bin:$PATH"; cd ~/workspace; mise trust; mise install; mise run doctor'
 apt-get clean

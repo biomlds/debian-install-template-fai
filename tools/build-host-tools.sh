@@ -29,5 +29,5 @@ commit=$(git -C "$tmp/grub-btrfs" rev-parse HEAD)
 case $commit in "$GRUB_BTRFS_COMMIT_PREFIX"*) ;; *) echo "Unexpected grub-btrfs commit: $commit" >&2; exit 1;; esac
 rm -rf "$tmp/grub-btrfs/.git"
 cp -a "$tmp/grub-btrfs" "$vendor/grub-btrfs"
-sha256sum "$out"/* > "$repo/fai/config/assets/HOST_TOOLS.sha256"
+(cd "$repo" && sha256sum fai/config/assets/bin/* > fai/config/assets/HOST_TOOLS.sha256)
 printf 'chezmoi=%s\nyazi=%s\ngrub-btrfs=v%s@%s\n' "$CHEZMOI_VERSION" "$YAZI_VERSION" "$GRUB_BTRFS_VERSION" "$commit" > "$repo/fai/config/assets/HOST_TOOLS.versions"

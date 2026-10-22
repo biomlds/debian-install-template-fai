@@ -6,6 +6,7 @@ fonts-noto-color-emoji
 foot
 grim
 lightdm
+lightdm-gtk-greeter
 mako-notifier
 network-manager-gnome
 pavucontrol
@@ -22,3 +23,5 @@ wl-clipboard
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-desktop-portal-wlr
+xserver-xorg
+xwayland

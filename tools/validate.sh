@@ -2,69 +2,47 @@
 set -Eeuo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 
 echo "==> Shell syntax checks"
 
-find "${REPO_ROOT}" \
-  -type f \
-  \( -name "*.sh" -o -path "*/scripts/*" \) \
-  -print0 |
-while IFS= read -r -d '' file; do
+mapfile -d '' shell_files < <(
+    find "$REPO_ROOT" \
+        -type f \
+        \( -name "*.sh" -o -path "*/scripts/*" \) \
+        ! -path "*/.git/*" \
+        ! -path "*/build/*" \
+        ! -path "*/fai/config/assets/bin/*" \
+        ! -path "*/fai/config/assets/vendor/*" \
+        -print0
+)
+
+for file in "${shell_files[@]}"; do
     bash -n "$file"
 done
 
 echo "==> Shellcheck"
 
-find "${REPO_ROOT}" \
-  -type f \
-  \( -name "*.sh" -o -path "*/scripts/*" \) \
-  -print0 |
-xargs -0 -r shellcheck
+if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck "${shell_files[@]}"
+else
+    echo "WARN: shellcheck unavailable; skipped" >&2
+fi
 
-echo "==> YAML validation"
+echo "==> Repository validation"
 
-python3 <<'PY'
-import pathlib
-import yaml
+python3 "$REPO_ROOT/tools/validate.py"
 
-for f in pathlib.Path(".").rglob("*.yml"):
-    yaml.safe_load(f.read_text())
+echo "==> First-boot input validation"
 
-for f in pathlib.Path(".").rglob("*.yaml"):
-    yaml.safe_load(f.read_text())
+bash "$REPO_ROOT/tests/test-firstboot-input.sh"
 
-print("YAML OK")
-PY
+echo "==> LUKS rotation validation"
 
-echo "==> FAI setup-storage validation"
+bash "$REPO_ROOT/tests/test-luks-rotation-image.sh"
 
-TMPDIR="$(mktemp -d)"
-IMG="${TMPDIR}/disk.img"
+echo "==> Disk selector validation"
 
-cleanup() {
-    set +e
-
-    if [[ -n "${LOOPDEV:-}" ]]; then
-        losetup -d "$LOOPDEV" 2>/dev/null || true
-    fi
-
-    rm -rf "$TMPDIR"
-}
-trap cleanup EXIT
-
-truncate -s 20G "$IMG"
-
-LOOPDEV="$(losetup --show -fP "$IMG")"
-
-echo "Using loop device: $LOOPDEV"
-
-export disklist="$LOOPDEV"
-
-setup-storage \
-    -p \
-    -D "$LOOPDEV" \
-    -f fai/disk_config/WORKSTATION >/dev/null
-
-echo "FAI storage validation OK"
+python3 "$REPO_ROOT/tests/test-disk-selector.py"
 
 echo "==> Repository validation successful"

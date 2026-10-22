@@ -6,7 +6,7 @@ Git, CI, and the ISO contain classes, package names, scripts, schemas, pinned to
 
 ## Temporary installation boundary
 
-`tools/prepare-bootstrap.sh` writes a password hash for `provision`, an optional public SSH key, and a temporary LUKS passphrase to an existing ext4 removable filesystem labelled `FAI-BOOTSTRAP`. It disables shell tracing, uses mode 0600, and never prints credentials. Attach this media only during installation and keep it offline afterward.
+`tools/prepare-bootstrap.sh` writes a password hash for `provision`, an optional public SSH key, and a temporary LUKS passphrase to an existing ext4 removable filesystem. It rejects symlinks on the media, writes through short-lived 0600 files renamed into place, labels the filesystem `FAI-BOOTSTRAP` only after successful validation, disables shell tracing, and never prints credentials. Attach this media only during installation and keep it offline afterward.
 
 The temporary LUKS passphrase is retained root-only inside the encrypted target solely so first boot can authorize safe rotation. Until rotation/finalization finishes, possession of that credential permits disk unlock. Treat an incomplete machine as unprovisioned.
 

@@ -22,7 +22,10 @@ cryptsetup luksAddKey --pbkdf pbkdf2 --key-file "$temp" --new-key-slot 1 "$image
 cryptsetup open --test-passphrase --key-slot 1 --key-file "$perm" "$image" >/dev/null
 [ "$(set -- $(slots); echo $#)" -ge 2 ]
 cryptsetup luksKillSlot --key-file "$perm" "$image" "$old" >/dev/null
-! cryptsetup open --test-passphrase --key-file "$temp" "$image" >/dev/null 2>&1
+if cryptsetup open --test-passphrase --key-file "$temp" "$image" >/dev/null 2>&1; then
+    echo "Temporary key still unlocks the LUKS image after slot removal." >&2
+    exit 1
+fi
 cryptsetup open --test-passphrase --key-file "$perm" "$image" >/dev/null
 [ "$(set -- $(slots); echo $#)" -ge 1 ]
 echo "PASS regular-file LUKS2 rotation; no block device was opened or modified"

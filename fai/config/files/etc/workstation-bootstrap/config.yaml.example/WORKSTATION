@@ -24,16 +24,12 @@ chezmoi:
 borg:
   repository: "REPLACE_BORG_REPOSITORY"
   ssh_key_file: "/media/secure/borg_ed25519"
-  passphrase:
-    file: "/media/secure/borg.passphrase"
 vorta:
   profile_name: "Personal files"
   source_paths: ["~"]
   excludes_file: "/media/secure/borg-excludes.txt"
 cryptomator:
   vault_path: "~/ColdStorage/Cryptomator"
-  password:
-    file: "/media/secure/cryptomator.password"
 grub:
   username: "workstation-admin"
   password:

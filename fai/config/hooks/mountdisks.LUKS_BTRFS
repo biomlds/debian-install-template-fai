@@ -13,8 +13,18 @@ efi_spec=$(awk '$2 == "/boot/efi" {print $1; exit}' "$fstab")
 [ -n "$efi_spec" ] || { echo "No EFI entry in setup-storage fstab." >&2; exit 1; }
 
 top=/run/fai/btrfs-top
+top_mounted=0
+cleanup_top(){
+    if [ "$top_mounted" -eq 1 ]; then
+        umount "$top" 2>/dev/null || true
+    fi
+}
+trap cleanup_top EXIT
 mkdir -p "$top" "$target"
-mountpoint -q "$top" || mount -o subvolid=5 "$mapper" "$top"
+if ! mountpoint -q "$top"; then
+    mount -o subvolid=5 "$mapper" "$top"
+fi
+top_mounted=1
 for subvol in @root @home @snapshots; do
     if [ ! -e "$top/$subvol" ]; then
         btrfs subvolume create "$top/$subvol"
@@ -24,17 +34,22 @@ for subvol in @root @home @snapshots; do
     fi
 done
 root_id=$(btrfs subvolume show "$top/@root" | awk -F': *' '/Subvolume ID:/ {print $2; exit}')
+[ -n "$root_id" ] || { echo "Could not determine the @root subvolume ID." >&2; exit 1; }
 btrfs subvolume set-default "$root_id" "$top"
 umount "$top"
+top_mounted=0
+trap - EXIT
 
 mount -o noatime,compress=zstd:3,subvol=@root "$mapper" "$target"
 mkdir -p "$target/home" "$target/.snapshots" "$target/boot/efi"
 mount -o noatime,compress=zstd:3,subvol=@home "$mapper" "$target/home"
 mount -o noatime,compress=zstd:3,subvol=@snapshots "$mapper" "$target/.snapshots"
-mount "$efi_spec" "$target/boot/efi"
+efi_device=$(findfs "$efi_spec")
+[ -b "$efi_device" ] || { echo "EFI device not found: $efi_spec" >&2; exit 1; }
+[ "$(blkid -s TYPE -o value "$efi_device")" = vfat ] || { echo "EFI partition is not vfat: $efi_device" >&2; exit 1; }
+mount "$efi_device" "$target/boot/efi"
 
 root_uuid=$(blkid -s UUID -o value "$mapper")
-efi_device=$(findfs "$efi_spec")
 efi_uuid=$(blkid -s UUID -o value "$efi_device")
 cat > "$LOGDIR/fstab" <<FSTAB
 UUID=$root_uuid /           btrfs noatime,compress=zstd:3,subvol=@root       0 0
