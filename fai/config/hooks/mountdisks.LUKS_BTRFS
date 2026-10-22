@@ -9,6 +9,13 @@ fstab=$LOGDIR/fstab
 read -r crypt_name _crypt_device _crypt_key _crypt_options < <(awk '!/^($|#)/ {print; exit}' "$crypttab")
 mapper=/dev/mapper/$crypt_name
 [ -b "$mapper" ] || { echo "Encrypted mapper is not open: $mapper" >&2; exit 1; }
+fs_type=$(blkid -s TYPE -o value "$mapper" || true)
+if [ -z "$fs_type" ]; then
+    mkfs.btrfs -f -L debian-root "$mapper"
+elif [ "$fs_type" != btrfs ]; then
+    echo "Encrypted volume is $fs_type, expected btrfs: $mapper" >&2
+    exit 1
+fi
 efi_spec=$(awk '$2 == "/boot/efi" {print $1; exit}' "$fstab")
 [ -n "$efi_spec" ] || { echo "No EFI entry in setup-storage fstab." >&2; exit 1; }
 

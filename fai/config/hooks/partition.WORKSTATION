@@ -14,7 +14,7 @@ install -d -m 0700 "$LOGDIR"
 
 # This hook replaces FAI's standard partition task so selection can happen before
 # setup-storage. It fails closed on missing TTY, cancellation, EOF, or any check.
-"$selector" select --output "$selection" --env-output "$selection_env" \
+"$selector" select --tty /dev/console --output "$selection" --env-output "$selection_env" \
     2>&1 | tee "$LOGDIR/disk-selection.log"
 
 # The selector already revalidates once after persistence. Repeat it as the last

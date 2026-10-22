@@ -144,6 +144,48 @@ def test_record_is_tied_to_identity() -> None:
     assert not record["test_only_override"]
 
 
+def test_console_candidates_include_fallbacks() -> None:
+    candidates = selector.console_candidates("/dev/console")
+    assert candidates[0] == "/dev/console"
+    assert "/dev/tty" in candidates
+    assert len(candidates) == len(set(candidates))
+
+
+def test_interactive_console_falls_back() -> None:
+    data = fixture("disks-network.json")
+    mode, media, disks, rejected = selector.eligible_disks(
+        data["lsblk"], data["mounts"], data["cmdline"], data["by_id"]
+    )
+    opened: list[str] = []
+    token = f"PREVIEW {disks[0].token}"
+
+    class FakeTTY:
+        def __init__(self, value: str): self.lines = iter(value.splitlines(keepends=True))
+        def write(self, _value: str): return None
+        def flush(self): return None
+        def readline(self): return next(self.lines, "")
+        def __enter__(self): return self
+        def __exit__(self, *_exc): return False
+
+    def fake_open(path: str):
+        opened.append(path)
+        if len(opened) == 1:
+            raise OSError(6, "No such device or address")
+        return FakeTTY(f"1\n\n{token}\n")
+
+    original = selector.open_console
+    selector.open_console = fake_open
+    try:
+        os_disk, boot_disk = selector.interactive_selection(
+            mode, media, disks, rejected, "/dev/tty", True
+        )
+    finally:
+        selector.open_console = original
+    assert opened[0] == "/dev/tty"
+    assert len(opened) >= 2
+    assert os_disk is disks[0] and boot_disk is disks[0]
+
+
 def test_incomplete_test_override_refused() -> None:
     data = fixture("disks-network.json")
     _, _, disks, _ = selector.eligible_disks(data["lsblk"], data["mounts"], data["cmdline"], data["by_id"])

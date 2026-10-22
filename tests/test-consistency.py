@@ -12,11 +12,15 @@ for name in ('@root','@home','@snapshots'):
 for name in ('@var_log','@var_cache','@var_tmp','@incus','@swap'):
     if name in mount or name in (cfg/'disk_config/LUKS_BTRFS').read_text(): errors.append(f'forbidden subvolume {name}')
 if 'subvol=@home' not in mount or 'subvol=@snapshots' not in mount: errors.append('missing mount options')
+for token in ('mkfs.btrfs','blkid -s TYPE -o value','expected btrfs'):
+    if token not in mount: errors.append(f'encrypted btrfs guard missing {token}')
 snap=(cfg/'files/etc/snapper/configs/root/LUKS_BTRFS').read_text()
 if 'SUBVOLUME="/"' not in snap: errors.append('snapper is not root-only')
 disk=(cfg/'disk_config/LUKS_BTRFS').read_text()
 for token in ('disklabel:gpt','p=efi','disk_config cryptsetup','--type=luks2','--pbkdf=pbkdf2','btrfs'):
     if token not in disk: errors.append(f'disk config missing {token}')
+if 'createopts="-L debian-root"' in disk:
+    errors.append('btrfs label must be applied by the mountdisks hook, not setup-storage')
 for line in disk.splitlines():
     if line.strip() and not line.lstrip().startswith('#'):
         fields=line.split()
@@ -51,10 +55,10 @@ workstation_var=(cfg/'class/WORKSTATION.var').read_text()
 if 'fai.disk' in workstation_var or 'FAI_DISK=' in workstation_var:
     errors.append('obsolete production kernel-command-line disk selection remains')
 partition=(cfg/'hooks/partition.WORKSTATION').read_text()
-for token in ('disk_selector.py',' select ',' revalidate ','setup-storage -X','-D "$disklist"','BOOT_DEVICE'):
+for token in ('disk_selector.py',' select ','--tty /dev/console',' revalidate ','setup-storage -X','-D "$disklist"','BOOT_DEVICE'):
     if token not in partition: errors.append(f'partition hook missing {token}')
 selector=(cfg/'assets/disk-selection/disk_selector.py').read_text()
-for token in ('KNOWN_LIVE_TARGETS','EXCLUDED_TYPES','ERASE','test_disk_selection','systemd-detect-virt','identity changed','Split bootloader'):
+for token in ('KNOWN_LIVE_TARGETS','EXCLUDED_TYPES','ERASE','test_disk_selection','systemd-detect-virt','identity changed','Split bootloader','console_candidates','/sys/class/tty/console/active'):
     if token not in selector: errors.append(f'disk selector missing safety control {token}')
 grub_setup=(cfg/'scripts/GRUB_EFI/10-setup').read_text()
 for token in ('FAI_SELECTED_BOOT_STABLE','BOOT_DEVICE','/boot/efi','efi_disk'):

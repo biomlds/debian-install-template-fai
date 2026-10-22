@@ -10,7 +10,7 @@ setup-storage -s -f fai/config/disk_config/LUKS_BTRFS
 python3 tests/test-disk-selector.py
 ```
 
-Actual installation requires mounted `FAI-BOOTSTRAP` media and an interactive console. No production disk is supplied on the kernel command line. `hooks/partition.WORKSTATION` replaces FAI's standard partition task: it discovers physical disks, identifies and excludes the local FAI medium (or verifies network boot), prompts for OS and bootloader targets, requires a disk-specific `ERASE` token, persists stable identity, revalidates, and then calls `setup-storage -X -D <selected-kernel-device>`.
+Actual installation requires mounted `FAI-BOOTSTRAP` media and an interactive console. The selector prompts on `/dev/console`; if that path fails it retries the active kernel console and `/dev/tty`. No production disk is supplied on the kernel command line. `hooks/partition.WORKSTATION` replaces FAI's standard partition task: it discovers physical disks, identifies and excludes the local FAI medium (or verifies network boot), prompts for OS and bootloader targets, requires a disk-specific `ERASE` token, persists stable identity, revalidates, and then calls `setup-storage -X -D <selected-kernel-device>`.
 
 The selector rejects loop, RAM/zram, optical, device-mapper, read-only, mounted, too-small, and installation-media disks. A local live boot must resolve to exactly one backing medium; an unknown or ambiguous source aborts. Stable `/dev/disk/by-id` paths are preferred and the resolved kernel path is supplied as FAI `disklist`/`-D`.
 

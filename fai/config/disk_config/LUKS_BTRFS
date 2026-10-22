@@ -6,4 +6,4 @@ p=          -           8G-  -    -
 
 disk_config cryptsetup
 # GRUB 2.12 can unlock LUKS2 only with PBKDF2 keyslots; see docs/GRUB.md.
-luks - disk1.2 btrfs - lukscreateopts="--type=luks2 --pbkdf=pbkdf2" createopts="-L debian-root"
+luks - disk1.2 btrfs - lukscreateopts="--type=luks2 --pbkdf=pbkdf2"

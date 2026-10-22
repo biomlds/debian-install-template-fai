@@ -384,7 +384,7 @@ def prompt_choice(prompt: str, disks: list[Disk], tty: TextIO, default: int | No
         tty.write(prompt + suffix + ": ")
         tty.flush()
         value = tty.readline()
-    except (OSError, KeyboardInterrupt) as exc:
+    except KeyboardInterrupt as exc:
         raise SelectionError("Disk selection cancelled.") from exc
     if value == "":
         fail("EOF while selecting a disk.")
@@ -532,6 +532,80 @@ def print_detail(os_disk: Disk, boot_disk: Disk, mode: str, media: set[str], str
     print("\nWARNING: ALL DATA on the selected OS disk will be DESTROYED.", file=stream)
 
 
+def active_console_path() -> str | None:
+    try:
+        active = Path("/sys/class/tty/console/active").read_text().split()
+    except OSError:
+        return None
+    if not active:
+        return None
+    return f"/dev/{active[-1]}"
+
+
+def console_candidates(requested: str) -> list[str]:
+    candidates = [requested, "/dev/console"]
+    active = active_console_path()
+    if active:
+        candidates.append(active)
+    candidates.append("/dev/tty")
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in unique:
+            unique.append(candidate)
+    return unique
+
+
+def open_console(path: str) -> TextIO:
+    return Path(path).open("r+", buffering=1)
+
+
+def run_selection(
+    tty: TextIO,
+    mode: str,
+    media: set[str],
+    disks: list[Disk],
+    rejected: dict[str, str],
+    dry_run: bool,
+) -> tuple[Disk, Disk]:
+    show_rejected(rejected, tty)
+    show_disks(disks, tty)
+    os_disk = prompt_choice("Select OS target disk number", disks, tty)
+    show_disks(disks, tty)
+    default = disks.index(os_disk) + 1
+    boot_disk = prompt_choice("Select bootloader disk number (Enter uses OS disk)", disks, tty, default)
+    if boot_disk.stable_path != os_disk.stable_path:
+        fail("Split bootloader/OS disks are unsupported for this single-disk UEFI layout.")
+    print_detail(os_disk, boot_disk, mode, media, tty)
+    action = "PREVIEW" if dry_run else "ERASE"
+    token = f"{action} {os_disk.token}"
+    tty.write(f"Type exactly '{token}' to continue: ")
+    tty.flush()
+    confirmation = tty.readline()
+    if confirmation == "":
+        fail("EOF during destructive confirmation.")
+    if confirmation.rstrip("\r\n") != token:
+        fail("Destructive confirmation did not match the selected disk.")
+    return os_disk, boot_disk
+
+
+def interactive_selection(
+    mode: str,
+    media: set[str],
+    disks: list[Disk],
+    rejected: dict[str, str],
+    requested_tty: str,
+    dry_run: bool,
+) -> tuple[Disk, Disk]:
+    errors: list[str] = []
+    for path in console_candidates(requested_tty):
+        try:
+            with open_console(path) as tty:
+                return run_selection(tty, mode, media, disks, rejected, dry_run)
+        except OSError as exc:
+            errors.append(f"{path}: {exc.strerror or exc}")
+    raise SelectionError("Interactive console unavailable: " + "; ".join(errors))
+
+
 def select_command(args: argparse.Namespace) -> None:
     mode, media, disks, rejected, cmdline = fresh_eligible()
     if not disks:
@@ -542,29 +616,9 @@ def select_command(args: argparse.Namespace) -> None:
         test_only = True
     else:
         test_only = False
-        tty_path = Path(args.tty)
-        try:
-            with tty_path.open("r+", buffering=1) as tty:
-                show_rejected(rejected, tty)
-                show_disks(disks, tty)
-                os_disk = prompt_choice("Select OS target disk number", disks, tty)
-                show_disks(disks, tty)
-                default = disks.index(os_disk) + 1
-                boot_disk = prompt_choice("Select bootloader disk number (Enter uses OS disk)", disks, tty, default)
-                if boot_disk.stable_path != os_disk.stable_path:
-                    fail("Split bootloader/OS disks are unsupported for this single-disk UEFI layout.")
-                print_detail(os_disk, boot_disk, mode, media, tty)
-                action = "PREVIEW" if args.dry_run else "ERASE"
-                token = f"{action} {os_disk.token}"
-                tty.write(f"Type exactly '{token}' to continue: ")
-                tty.flush()
-                confirmation = tty.readline()
-                if confirmation == "":
-                    fail("EOF during destructive confirmation.")
-                if confirmation.rstrip("\r\n") != token:
-                    fail("Destructive confirmation did not match the selected disk.")
-        except OSError as exc:
-            raise SelectionError(f"Interactive console unavailable: {tty_path}") from exc
+        os_disk, boot_disk = interactive_selection(
+            mode, media, disks, rejected, args.tty, args.dry_run
+        )
     record = selection_record(os_disk, boot_disk, mode, media, test_only)
     print_detail(os_disk, boot_disk, mode, media, sys.stdout)
     if args.dry_run:
