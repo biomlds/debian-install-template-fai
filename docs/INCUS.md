@@ -2,7 +2,7 @@
 
 Run `sudo incus-init-workstation` once. It creates one NAT bridge, one `dir` storage pool, and one default profile. There are no role-specific profiles.
 
-VMs are the default and only path exposed by the creation helper:
+VMs are the default and only path exposed by the creation helper. `create.sh` uses `incus init` with `images:debian/13/cloud`, applies CPU, memory, and root disk size while the VM is stopped, then starts it; cloud-init grows the filesystem to the requested disk size on first boot.
 
 ```bash
 base=/usr/local/share/workstation-bootstrap/incus/scripts

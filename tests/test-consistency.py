@@ -43,6 +43,12 @@ if 'chpasswd --encrypted' not in provision or 'usermod --password' in provision:
     errors.append('temporary account password is not supplied over stdin')
 incus=(cfg/'assets/incus/scripts/create.sh').read_text()
 if ' --vm ' not in incus or '--container' in incus: errors.append('Incus helper must create VMs only')
+for token in ('incus init images:debian/13/cloud','--device root,size="$disk"','incus start "$name"','cloud-init status --wait'):
+    if token not in incus: errors.append(f'Incus helper missing {token}')
+if 'incus launch' in incus or 'config device override' in incus:
+    errors.append('Incus VM must be initialized before its first start')
+if 'incus init' in incus and 'incus start "$name"' in incus and incus.index('incus init') > incus.index('incus start "$name"'):
+    errors.append('Incus VM must be initialized before it is started')
 packages='\n'.join(p.read_text() for p in (cfg/'package_config').iterdir())
 if any(re.search(rf'(?m)^{name}$',packages) for name in ('mise','nodejs','golang','rustc','cargo')):
     errors.append('project runtime/toolchain found in host package manifests')
@@ -70,6 +76,21 @@ for workflow in (root/'.github/workflows').glob('*.yml'):
 required_docs={'ARCHITECTURE.md','STORAGE.md','SECURITY.md','FIRST_BOOT.md','KEEPASSXC.md','CONFIG_YAML.md','BACKUP.md','RECOVERY.md','GRUB.md','LUKS.md','FAI.md','GITHUB_ACTIONS.md','INCUS.md','VALIDATION.md'}
 missing=required_docs-{p.name for p in (root/'docs').glob('*.md')}
 errors.extend(f'missing doc {name}' for name in sorted(missing))
+flatpak=(cfg/'files/usr/local/sbin/workstation-flatpaks/FLATPAK_APPS').read_text()
+for token in ('flatpak remote-add --system --if-not-exists','flatpak install --system --noninteractive --or-update','com.brave.Browser','com.visualstudio.code','org.cryptomator.Cryptomator','state_dir=/var/lib/workstation-flatpaks','marker=$state_dir/complete'):
+    if token not in flatpak: errors.append(f'flatpak installer missing {token}')
+if (cfg/'scripts/FLATPAK_APPS/10-flatpaks').exists():
+    errors.append('Flatpak applications must not be installed from FAI scripts')
+if any('flatpak install' in p.read_text() for p in (cfg/'scripts').rglob('*') if p.is_file()):
+    errors.append('Flatpak install command found in FAI scripts')
+flatpak_service=(cfg/'files/etc/systemd/system/workstation-flatpaks.service/FLATPAK_APPS').read_text()
+for token in ('ConditionPathExists=!/var/lib/workstation-flatpaks/complete','Wants=network-online.target','After=network-online.target','TimeoutStartSec=1h','ExecStart=/usr/local/sbin/workstation-flatpaks'):
+    if token not in flatpak_service: errors.append(f'flatpak service missing {token}')
+flatpak_timer=(cfg/'files/etc/systemd/system/workstation-flatpaks.timer/FLATPAK_APPS').read_text()
+for token in ('OnBootSec=2min','OnUnitInactiveSec=1h','Unit=workstation-flatpaks.service','WantedBy=timers.target'):
+    if token not in flatpak_timer: errors.append(f'flatpak timer missing {token}')
+if 'systemctl enable workstation-flatpaks.timer' not in (cfg/'scripts/FINAL/99-finalize').read_text():
+    errors.append('FINAL does not enable the flatpak timer')
 if errors:
     print('\n'.join('ERROR '+e for e in errors)); raise SystemExit(1)
 print('PASS implementation/documentation consistency checks')

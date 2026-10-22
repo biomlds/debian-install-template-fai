@@ -43,7 +43,10 @@ required = [
     "scripts/LUKS_BTRFS/20-snapper",
     "scripts/GRUB_EFI/10-setup",
     "scripts/FINAL/99-finalize",
+    "files/etc/systemd/system/workstation-flatpaks.service/FLATPAK_APPS",
+    "files/etc/systemd/system/workstation-flatpaks.timer/FLATPAK_APPS",
     "files/usr/local/lib/workstation-firstboot/workstation_firstboot.py/WORKSTATION",
+    "files/usr/local/sbin/workstation-flatpaks/FLATPAK_APPS",
     "assets/disk-selection/disk_selector.py",
 ]
 

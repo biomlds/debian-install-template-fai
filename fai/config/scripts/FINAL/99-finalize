@@ -5,7 +5,7 @@ fcopy -riM /etc/profile.d
 fcopy -riM /etc/systemd/system
 fcopy -riM /usr/local/sbin
 fcopy -riM /usr/local/lib/workstation-firstboot
-chmod 0755 "$target/usr/local/sbin/"{workstation-firstboot,update-grub-secure,grub-security-check,incus-init-workstation,workstation-verify}
+chmod 0755 "$target/usr/local/sbin/"{workstation-firstboot,workstation-flatpaks,update-grub-secure,grub-security-check,incus-init-workstation,workstation-verify}
 chmod 0755 "$target/usr/local/lib/workstation-firstboot/workstation_firstboot.py"
 install -d -m 0700 "$target/var/lib/workstation-firstboot"
 install -d -m 0700 "$target/var/log/fai"
@@ -17,4 +17,5 @@ $ROOTCMD update-initramfs -u -k all
 $ROOTCMD update-grub
 $ROOTCMD systemctl daemon-reload
 $ROOTCMD systemctl enable ssh.service
+$ROOTCMD systemctl enable workstation-flatpaks.timer
 $ROOTCMD systemctl enable fwupd-refresh.timer unattended-upgrades.service 2>/dev/null || true

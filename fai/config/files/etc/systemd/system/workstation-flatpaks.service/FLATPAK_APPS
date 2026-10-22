@@ -1,0 +1,10 @@
+[Unit]
+Description=Install workstation Flatpak applications
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/workstation-flatpaks/complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/workstation-flatpaks
+TimeoutStartSec=1h

@@ -1,0 +1,18 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+state_dir=/var/lib/workstation-flatpaks
+marker=$state_dir/complete
+
+if [[ -e $marker ]]; then
+  exit 0
+fi
+
+install -d -m 0755 "$state_dir"
+
+flatpak remote-add --system --if-not-exists flathub \
+  https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --system --noninteractive --or-update flathub \
+  com.brave.Browser com.visualstudio.code org.cryptomator.Cryptomator
+
+install -m 0644 /dev/null "$marker"

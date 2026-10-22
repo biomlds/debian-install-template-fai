@@ -2,6 +2,8 @@
 
 Install `server/NFSROOT`, `server/sources.list`, and reviewed values from `server/nfsroot.conf.example` under `/etc/fai`; copy `fai/config` to `/srv/fai/config`. Build pinned host binaries in an isolated container before the ISO.
 
+Flatpak itself is part of the installed package set, but Flatpak applications are not installed in the FAI chroot. `workstation-flatpaks.timer` starts shortly after first boot, installs or updates the declared system applications, writes `/var/lib/workstation-flatpaks/complete` only after success, and retries hourly on failure. Follow progress with `journalctl -u workstation-flatpaks.service`. After changing the application list, remove the completion marker and start `workstation-flatpaks.service` manually.
+
 Validation is non-destructive:
 
 ```bash

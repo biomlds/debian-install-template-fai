@@ -6,4 +6,6 @@ FAI installs Debian Stable, storage, packages, the `provision` account, security
 
 First boot normalizes KeePassXC or YAML into one in-memory model, validates every mandatory field, and performs journaled stages: account, identity/SSH, chezmoi, backup locations, GRUB, LUKS rotation, and verification. State contains stage names and non-secret fingerprints only. Secrets remain in memory or root-only `/run` files and are cleaned on exit.
 
+Flatpak applications are installed by a first-boot systemd timer rather than the FAI chroot, so installation never depends on bubblewrap, FUSE, or a running system bus inside the target. The timer retries failures and records success in `/var/lib/workstation-flatpaks/complete`.
+
 The permanent account is created, never produced by renaming `provision`. Final removal of `provision` is a separate command that must be run through sudo from the verified permanent account.

@@ -83,6 +83,10 @@ A ready-to-use FAI config space for a reproducible **Debian 13 Stable**, amd64/U
    sudo workstation-firstboot finalize
    ```
 
+   Flatpak applications install in the background once the first-boot network is
+   online. Check progress with `journalctl -u workstation-flatpaks.service`;
+   failures retry hourly.
+
 6. **Restore and initialize services**
 
    - Apply/inspect dotfiles: `chezmoi diff && chezmoi apply`.

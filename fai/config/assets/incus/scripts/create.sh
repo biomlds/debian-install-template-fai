@@ -25,8 +25,10 @@ done
 if [ -z "$memory" ] || [ -z "$disk" ]; then echo "Memory and disk size must not be empty." >&2; exit 1; fi
 incus info "$name" >/dev/null 2>&1 && { echo "Instance exists: $name" >&2; exit 1; }
 base=/usr/local/share/workstation-bootstrap/incus/templates/$role
-incus launch images:debian/13/cloud "$name" --vm -p default -c limits.cpu="$cpu" -c limits.memory="$memory"
-incus config device override "$name" root size="$disk"
+incus init images:debian/13/cloud "$name" --vm -p default \
+  -c limits.cpu="$cpu" -c limits.memory="$memory" \
+  --device root,size="$disk"
+incus start "$name"
 ready=0
 for _ in $(seq 1 120); do
   if incus exec "$name" -- true >/dev/null 2>&1; then

@@ -1,0 +1,10 @@
+[Unit]
+Description=Retry workstation Flatpak installation until complete
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1h
+Unit=workstation-flatpaks.service
+
+[Install]
+WantedBy=timers.target
