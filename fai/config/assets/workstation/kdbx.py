@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import json
 import os
@@ -11,6 +12,7 @@ import resource
 import shutil
 import shlex
 import stat
+import struct
 import subprocess
 import sys
 import termios
@@ -21,6 +23,61 @@ PREFIX = "Workstation Bootstrap"
 MEDIA = Path("/run/fai/kdbx")
 SECRETS = Path("/run/fai/workstation-secrets")
 EFI = Path("/sys/firmware/efi/efivars")
+
+
+def validate_ssh_key(private_key, public_key):
+    """Check an encrypted OpenSSH envelope and its public key without decrypting.
+
+    OpenSSH stores the public key outside the encrypted section. A failed empty
+    password probe alone cannot distinguish an encrypted key from a corrupt file.
+    """
+    try:
+        lines = private_key.read_bytes().strip().splitlines()
+        if lines[0] != b"-----BEGIN " + b"OPENSSH PRIVATE KEY-----" or lines[-1] != b"-----END OPENSSH PRIVATE KEY-----":
+            raise ValueError("Require OpenSSH private-key format")
+        data = base64.b64decode(b"".join(lines[1:-1]), validate=True)
+        magic = b"openssh-key-v1\x00"
+        if not data.startswith(magic):
+            raise ValueError("Invalid OpenSSH magic")
+        offset = len(magic)
+
+        def field():
+            nonlocal offset
+            size = struct.unpack_from(">I", data, offset)[0]
+            offset += 4
+            end = offset + size
+            if end > len(data):
+                raise ValueError("Truncated OpenSSH field")
+            value = data[offset:end]
+            offset = end
+            return value
+
+        cipher, kdf, options = field(), field(), field()
+        if cipher == b"none" or kdf != b"bcrypt" or len(options) < 9:
+            raise ValueError("SSH key must be passphrase-protected using bcrypt")
+        salt_size = struct.unpack_from(">I", options)[0]
+        if salt_size == 0 or len(options) != salt_size + 8 or struct.unpack_from(">I", options, salt_size + 4)[0] == 0:
+            raise ValueError("Invalid bcrypt options")
+        count = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        if count != 1:
+            raise ValueError("Require one SSH identity")
+        embedded_public = field()
+        encrypted = field()
+        if not encrypted or offset != len(data):
+            raise ValueError("Invalid encrypted SSH payload")
+        public = public_key.read_bytes().split()
+        if len(public) < 2 or base64.b64decode(public[1], validate=True) != embedded_public:
+            raise ValueError("SSH private/public key mismatch")
+    except (ValueError, IndexError, struct.error) as error:
+        raise RuntimeError(f"Invalid protected SSH key: {error}") from None
+    run(["ssh-keygen", "-l", "-f", public_key])
+
+
+def borg_environment(repository):
+    if not Path(repository).is_absolute() or "\n" in repository or "\r" in repository or "\x00" in repository:
+        raise RuntimeError("Borg Repository must be an absolute local USB mount path, not SSH/URL")
+    return "BORG_REPO=" + shlex.quote(repository) + "\n"
 
 
 def run(args, data=None):
@@ -168,6 +225,7 @@ def extract(database, root, *, identity=True, console=False):
             "vorta_sources": ("Vorta", "SourcePaths", "~"), "vault": ("Cryptomator", "VaultPath"),
         }
         model = {key: attr(*spec) for key, spec in fields.items()}
+        borg_environment(model["borg_repository"])
         if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}", model["username"]) or model["username"] in {"root", "provision"}:
             raise RuntimeError("Invalid permanent username")
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}", model["hostname"]) or ":" in model["full_name"]:
@@ -194,15 +252,11 @@ def extract(database, root, *, identity=True, console=False):
             write(root / name, value)
         for entry, name, destination, optional in (
             ("SSH", "id_ed25519", "ssh-private", False), ("SSH", "id_ed25519.pub", "ssh-public", False),
-            ("SSH", "config", "ssh-config", True), ("Borg", "borg_ed25519", "borg-key", True),
+            ("SSH", "config", "ssh-config", True),
             ("Vorta", "excludes.txt", "vorta-excludes", True),
         ):
             attachment(entry, name, root / destination, optional)
-        run(["ssh-keygen", "-l", "-f", root / "ssh-public"])
-        # Empty passphrase prevents a supplied encrypted key from hanging setup.
-        public = run(["ssh-keygen", "-y", "-P", "", "-f", root / "ssh-private"]).split()
-        if public[:2] != (root / "ssh-public").read_bytes().split()[:2]:
-            raise RuntimeError("SSH private/public key mismatch")
+        validate_ssh_key(root / "ssh-private", root / "ssh-public")
         write(root / "identity.json", json.dumps(model))
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
@@ -230,17 +284,14 @@ def install_identity(target, root=SECRETS):
     home = target / "home" / user
     for source, dest, mode in (("ssh-private", ".ssh/id_ed25519", 0o600), ("ssh-public", ".ssh/id_ed25519.pub", 0o644),
                                ("ssh-public", ".ssh/authorized_keys", 0o600), ("ssh-config", ".ssh/config", 0o600),
-                               ("borg-key", ".ssh/borg_ed25519", 0o600), ("vorta-excludes", ".config/borg/vorta-excludes.txt", 0o600)):
+                                ("vorta-excludes", ".config/borg/vorta-excludes.txt", 0o600)):
         if (root / source).is_file():
             write(home / dest, (root / source).read_bytes(), mode)
     os.chmod(home / ".ssh", 0o700)
     write(home / ".config/workstation/setup.json", json.dumps(model, indent=2))
-    borg_env = "BORG_REPO=" + shlex.quote(model["borg_repository"]) + "\n"
-    if (root / "borg-key").exists():
-        borg_env += "BORG_RSH=" + shlex.quote(f"ssh -i /home/{user}/.ssh/borg_ed25519") + "\n"
-    write(home / ".config/borg/bootstrap.env", borg_env)
+    write(home / ".config/borg/bootstrap.env", borg_environment(model["borg_repository"]))
     write(home / ".config/borg/VORTA-FIRST-LOGIN.txt",
-          f"Repository: {model['borg_repository']}\nProfile: {model['vorta_profile']}\nSources: {model['vorta_sources']}\nConfigure Vorta after login; keep the Borg passphrase in KDBX.\n")
+          f"Repository: {model['borg_repository']}\nProfile: {model['vorta_profile']}\nSources: {model['vorta_sources']}\nMount the USB drive before backup. Configure local repository encryption/passphrase in Vorta after login. No SSH is used.\n")
     vault = model["vault"].replace("$HOME", "~", 1)
     vault = "" if vault == "~" else vault.removeprefix("~/")
     (home / vault).mkdir(parents=True, exist_ok=True, mode=0o700)

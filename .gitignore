@@ -17,3 +17,4 @@ provision.authorized_keys
 *.auth
 *.esl
 GUID
+.DS_Store

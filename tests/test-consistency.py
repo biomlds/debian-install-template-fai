@@ -9,6 +9,17 @@ CFG = ROOT / "fai/config"
 
 
 class Configuration(unittest.TestCase):
+    def test_keepassxc_uses_session_agent_and_borg_is_local(self):
+        session = self.text("files/usr/local/bin/workstation-sway/SWAY")
+        self.assertIn("exec ssh-agent /usr/local/libexec/workstation-sway-session", session)
+        inner = self.text("files/usr/local/libexec/workstation-sway-session/SWAY")
+        self.assertIn("dbus-update-activation-environment --systemd SSH_AUTH_SOCK SSH_AGENT_PID", inner)
+        self.assertIn("exec sway", inner)
+        self.assertIn("exec keepassxc", self.text("files/etc/sway/config.d/90-workstation-keepassxc.conf/SWAY"))
+        inputs = self.text("assets/workstation/kdbx.py")
+        self.assertNotIn("borg_ed25519", inputs)
+        self.assertNotIn("BORG_RSH", inputs)
+
     def text(self, path):
         return (CFG / path).read_text()
 

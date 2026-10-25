@@ -53,6 +53,8 @@ required = [
 
 
 def ignored(path: Path) -> bool:
+    if path.name == ".DS_Store":
+        return True
     relative = path.relative_to(ROOT)
     if any(part in {".git", "build", "__pycache__"} for part in relative.parts):
         return True

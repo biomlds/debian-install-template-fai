@@ -29,6 +29,7 @@ jobs:
             fai-setup-storage \
             git \
             make \
+            openssh-client \
             mtools \
             grub-efi-amd64-bin \
             grub-pc-bin \

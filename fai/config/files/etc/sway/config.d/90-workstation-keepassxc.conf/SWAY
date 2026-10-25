@@ -1,0 +1,2 @@
+# KeePassXC supplies keys to the inherited OpenSSH agent after database unlock.
+exec keepassxc

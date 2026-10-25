@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Workstation Sway (KeePassXC SSH agent integration)
+Comment=Sway with a session-scoped OpenSSH agent
+Exec=/usr/local/bin/workstation-sway
+TryExec=/usr/local/bin/workstation-sway
+Type=Application
+DesktopNames=sway

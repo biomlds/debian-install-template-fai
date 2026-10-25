@@ -1,4 +1,10 @@
 #!/bin/bash
 set -Eeuo pipefail
+fcopy -iM /usr/local/bin/workstation-sway
+fcopy -iM /usr/local/libexec/workstation-sway-session
+fcopy -iM /usr/share/wayland-sessions/workstation-sway.desktop
+fcopy -riM /etc/lightdm/lightdm.conf.d
+fcopy -riM /etc/sway/config.d
+chmod 0755 "$target/usr/local/bin/workstation-sway" "$target/usr/local/libexec/workstation-sway-session"
 $ROOTCMD systemctl enable NetworkManager.service lightdm.service
 $ROOTCMD systemctl set-default graphical.target

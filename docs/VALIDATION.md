@@ -13,7 +13,7 @@ The cryptsetup test skips when cryptsetup is unavailable; CI installs it.
 No automated test writes a real block device.
 
 Current local results: shell syntax, ShellCheck, YAML/Python compilation, FAI
-disk syntax, 7 configuration-contract tests, 16 recovery/input/scanner tests, 12 mocked
+disk syntax, 8 configuration-contract tests, 18 recovery/input/scanner tests, 12 mocked
 disk-selector tests, and the regular-file Argon2id transition pass. The actual
 GitHub ISO build and the manual acceptance gates below are not yet verified.
 
@@ -56,6 +56,10 @@ ext4 KDBX media. Run real tests on the Dell 5490 before relying on recovery:
    locking, no reboot, no unsigned boot writes; deferred boot updates visible.
 8. Firmware capsule update, reinstall with matching keys, key rotation/reset,
    external recovery boot and ESP repair on real Dell hardware.
+9. Select Workstation Sway at LightDM login; verify `SSH_AUTH_SOCK` is inherited
+   by terminals and KeePassXC. Enable agent integration for a protected key and
+   verify unlock adds it, lock removes it, and logout stops the session agent.
+   Mount the backup USB and test encrypted local Vorta backup/restore without SSH.
 
 These gates are not replaced by passing static/unit tests. Record VM/hardware
 results before describing the design as proven for daily use.

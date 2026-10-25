@@ -36,6 +36,11 @@ ISO still has its own bootloader.
 
 ## Requirements
 
+SSH identities must be **passphrase-protected OpenSSH keys**. The Workstation
+Sway session starts an OpenSSH agent; KeePassXC loads/removes keys on database
+unlock/lock after the one-time entry setup in [KeePassXC inputs](docs/KEEPASSXC.md).
+Borg backups use a **local USB repository with a passphrase**, without SSH.
+
 - An amd64 UEFI machine. For Proxmox, use **q35 + OVMF + an EFI disk**;
   BIOS/SeaBIOS/CSM is unsupported.
 - A target disk that may be erased. OS and bootloader must use the same disk.

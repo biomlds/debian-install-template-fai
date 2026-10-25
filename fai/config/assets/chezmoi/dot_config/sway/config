@@ -9,3 +9,4 @@ bindsym $mod+Shift+q kill
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit Sway?' -b 'Exit' 'swaymsg exit'
 bar { swaybar_command waybar }
 include ~/.config/sway/local.conf
+include /etc/sway/config.d/90-workstation-keepassxc.conf

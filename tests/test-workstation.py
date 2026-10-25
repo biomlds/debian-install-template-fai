@@ -7,6 +7,8 @@ import json
 import os
 import sys
 import tempfile
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
@@ -18,6 +20,32 @@ import kdbx
 
 
 class RecoveryTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen unavailable")
+    def test_protected_ssh_keys_match_without_decrypting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "id_ed25519"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-a", "4", "-N",
+                            "test-only-encryption-passphrase", "-f", str(key)], check=True)
+            public = root / "id_ed25519.pub"
+            kdbx.validate_ssh_key(key, public)
+            other = root / "other"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(other)], check=True)
+            with self.assertRaisesRegex(RuntimeError, "passphrase-protected"):
+                kdbx.validate_ssh_key(other, root / "other.pub")
+            with self.assertRaisesRegex(RuntimeError, "mismatch"):
+                kdbx.validate_ssh_key(key, root / "other.pub")
+            key.write_bytes(b"corrupt")
+            with self.assertRaises(RuntimeError):
+                kdbx.validate_ssh_key(key, public)
+
+    def test_usb_borg_configuration_has_no_ssh_or_passphrase(self):
+        self.assertEqual(kdbx.borg_environment("/media/alex/Backup Drive/borg-repo"),
+                         "BORG_REPO='/media/alex/Backup Drive/borg-repo'\n")
+        for repository in ("ssh://backup@example/repo", "backup@example:repo", "relative/repo", "/mnt/usb\nsecret"):
+            with self.assertRaises(RuntimeError):
+                kdbx.borg_environment(repository)
+
     def test_pinned_baseline_survives_many_updates(self):
         records = [{"id": n} for n in range(1, 12)]
         self.assertEqual(boot.retained(records, 1), {1, 10, 11})
