@@ -11,6 +11,20 @@ config=$FAI/disk_config/LUKS_BTRFS
 [ -x "$selector" ] || { echo "Disk selector is missing or not executable: $selector" >&2; exit 1; }
 [ -r "$config" ] || { echo "Disk configuration is missing: $config" >&2; exit 1; }
 install -d -m 0700 "$LOGDIR"
+# Mark the standard task skipped even if our preflight fails. With STOP_ON_ERROR=0
+# FAI aborts, but this also prevents default partitioning in a permissive session.
+touch "$LOGDIR/skip.partition"
+cleanup_failed_preflight(){
+    status=$?
+    if [ "$status" -ne 0 ]; then python3 "$FAI/assets/workstation/kdbx.py" cleanup || true; fi
+}
+trap cleanup_failed_preflight EXIT
+
+# Never permit a failed class script to fall through to destructive selection.
+if [ "$(uname -m)" != x86_64 ] || [ ! -d /sys/firmware/efi ]; then
+    echo "amd64 UEFI is required." >&2; exit 1;
+fi
+python3 "$FAI/assets/workstation/kdbx.py" preflight
 
 # This hook replaces FAI's standard partition task so selection can happen before
 # setup-storage. It fails closed on missing TTY, cancellation, EOF, or any check.
@@ -34,3 +48,5 @@ setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"
 sed -i '/^BOOT_DEVICE=/d;/^PHYSICAL_BOOT_DEVICES=/d' "$LOGDIR/disk_var.sh"
 printf 'BOOT_DEVICE=%q\nPHYSICAL_BOOT_DEVICES=%q\n' \
     "$FAI_SELECTED_BOOT_KERNEL" "$FAI_SELECTED_BOOT_KERNEL" >> "$LOGDIR/disk_var.sh"
+# The standard task must source these variables into FAI's parent shell.
+rm -f "$LOGDIR/skip.partition"

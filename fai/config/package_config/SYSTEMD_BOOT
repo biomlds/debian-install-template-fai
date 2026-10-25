@@ -1,0 +1,10 @@
+PACKAGES install
+systemd-boot
+systemd-boot-efi
+systemd-boot-tools
+systemd-ukify
+systemd-cryptsetup
+sbsigntool
+efibootmgr
+openssl
+libpcsclite1

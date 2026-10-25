@@ -1,0 +1,3 @@
+#!/bin/sh
+# Override upstream ESP writer. Signed promotion is an explicit operation.
+exit 0

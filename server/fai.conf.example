@@ -1,2 +1,3 @@
-FAI_CONFIG_SRC=file:///srv/fai/config
-LOGUSER=fai
+FAI_CONFIG_SRC=file:///var/lib/fai/config
+# Standalone ISO: retain local logs; no remote log/chboot server.
+LOGUSER=

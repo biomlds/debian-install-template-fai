@@ -7,14 +7,20 @@ cd "$REPO_ROOT"
 echo "==> Shell syntax checks"
 
 mapfile -d '' shell_files < <(
-    find "$REPO_ROOT" \
-        -type f \
-        \( -name "*.sh" -o -path "*/scripts/*" \) \
-        ! -path "*/.git/*" \
-        ! -path "*/build/*" \
-        ! -path "*/fai/config/assets/bin/*" \
-        ! -path "*/fai/config/assets/vendor/*" \
-        -print0
+    python3 - "$REPO_ROOT" <<'PYTHON'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+for path in sorted(root.rglob('*')):
+    relative = path.relative_to(root)
+    if not path.is_file() or any(part in {'.git', 'build', '__pycache__'} for part in relative.parts):
+        continue
+    if str(relative).startswith(('fai/config/assets/bin/', 'fai/config/assets/vendor/')):
+        continue
+    first = path.open('rb').readline(256)
+    if path.suffix == '.sh' or (first.startswith(b'#!') and b'sh' in first):
+        sys.stdout.buffer.write(str(path).encode() + b'\0')
+PYTHON
 )
 
 for file in "${shell_files[@]}"; do
@@ -33,9 +39,9 @@ echo "==> Repository validation"
 
 python3 "$REPO_ROOT/tools/validate.py"
 
-echo "==> First-boot input validation"
+echo "==> Workstation recovery and input validation"
 
-bash "$REPO_ROOT/tests/test-firstboot-input.sh"
+python3 "$REPO_ROOT/tests/test-workstation.py"
 
 echo "==> LUKS rotation validation"
 

@@ -4,7 +4,6 @@ build/
 __pycache__/
 *.pyc
 fai/config/assets/bin/*
-fai/config/assets/vendor/grub-btrfs/
 fai/config/assets/HOST_TOOLS.sha256
 fai/config/assets/HOST_TOOLS.versions
 config/config.yaml
@@ -15,3 +14,6 @@ config/config.yaml
 luks.bootstrap.passphrase
 provision.password.hash
 provision.authorized_keys
+*.auth
+*.esl
+GUID

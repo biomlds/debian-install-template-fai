@@ -1,7 +1,17 @@
-# GitHub Actions and supply chain
+# GitHub Actions
 
-`validate.yml` installs FAI/cryptsetup validators in Debian trixie, runs syntax/static/consistency tests, validates first-boot input acceptance and rejection, executes mocked local-media/network-boot disk filtering tests, exercises LUKS rotation on a regular file, verifies the committed manifest without requiring Git metadata, and scans for credential material.
+`validate.yml` runs public-policy, syntax, package/storage, recovery-failure, disk
+selector, Argon2id, and manifest checks in Debian trixie on pushes/PRs/dispatch.
 
-`build-iso.yml` runs only on manual dispatch or version tags. It uses a privileged ephemeral Debian runner because FAI image construction needs mount capabilities. It compiles pinned chezmoi and Yazi from verified Git tags without putting Go/Rust on the installed host, fetches pinned grub-btrfs v4.14 and verifies the expected commit prefix, builds the ISO, scans its extracted content boundary, and uploads ISO/tool checksums. Chezmoi uses the Go 1.26 toolchain downloaded and checksum-verified through the Go module proxy; Yazi uses a pinned Rust 1.95 toolchain installed by a checksum-verified rustup bootstrap. Debian trixie's Go 1.24 and Rust 1.85 are not used to build the host tools.
+`build-iso.yml` runs only on workflow dispatch or `v*` tags in a privileged Debian
+trixie container. It installs FAI plus GRUB/ISO tools, validates the repository and
+manifest, builds pinned chezmoi/yazi/ya/sbctl, builds a fresh NFSROOT and ISO,
+checks SHA-256 files, and scans public content including decompressed squashfs.
+It uploads the ISO, ISO checksum, host-tool checksums/versions, and FAI logs.
 
-No GitHub secret is consumed. Public policy and first-boot schemas belong in the repository; bootstrap media and populated KeePassXC/YAML belong outside Git. Release/tag pinning reduces drift but is not bit-for-bit reproducibility across changing compiler/module ecosystems. The workflow currently references major-version GitHub Action tags; organizations requiring immutable CI dependencies should replace those tags with reviewed full commit IDs. VM bootstrap also downloads the mise installer over TLS while requesting a fixed version; mirror and checksum that installer internally if a stronger trust boundary is required. Preserve workflow logs, source revisions, ISO checksums, and generated host-tool checksums for each release.
+No signing database or GitHub secret is used: target signing happens during the
+installation using external KDBX media. GitHub does not produce a machine-specific
+Secure Boot-signed target image. Build artifacts expire after 14 days.
+
+Static CI cannot establish real firmware enrollment or snapshot-overlay recovery.
+Use the acceptance tests in VALIDATION.md before deployment.

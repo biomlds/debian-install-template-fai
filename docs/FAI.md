@@ -1,23 +1,29 @@
-# FAI build and installation
+# FAI installer
 
-Install `server/NFSROOT`, `server/sources.list`, and reviewed values from `server/nfsroot.conf.example` under `/etc/fai`; copy `fai/config` to `/srv/fai/config`. Build pinned host binaries in an isolated container before the ISO.
+`server/NFSROOT` defines the installer root embedded by `fai-cd`. It is needed even
+for an offline ISO. It contains partitioning tools, dracut live support, KeePassXC
+CLI, kbd/dbus, and sbctl runtime libraries. GRUB/shim packages here may support the
+ISO boot; they are separate from target package classes.
 
-Flatpak itself is part of the installed package set, but Flatpak applications are not installed in the FAI chroot. `workstation-flatpaks.timer` starts shortly after first boot, installs or updates the declared system applications, writes `/var/lib/workstation-flatpaks/complete` only after success, and retries hourly on failure. Follow progress with `journalctl -u workstation-flatpaks.service`. After changing the application list, remove the completion marker and start `workstation-flatpaks.service` manually.
+1. Boot amd64 UEFI. `20-bootstrap` locates read-only ext4 KDBX media.
+2. `partition.WORKSTATION` repeats UEFI checks, unlocks KDBX, validates identity and
+   Secure Boot keys, and checks Setup Mode/matching enrolled keys.
+3. Interactive disk selection excludes installation media, checks stable identity,
+   requires `ERASE <identifier>`, and revalidates before setup-storage.
+4. setup-storage creates GPT/ESP/LUKS. The mount hook creates Btrfs subvolumes.
+5. Class scripts install permanent identity, replace the temporary LUKS slot,
+   configure Snapper, desktop/backup assets, and systemd-boot controls.
+6. FINAL verifies the selected ESP backing disk, signs UKIs/bootloaders, enrolls
+   keys, registers Linux Boot Manager, enables timers, and removes tmpfs inputs.
 
-Validation is non-destructive:
+Class-script failure alone does not stop all FAI paths, so the destructive hook
+must independently validate prerequisites. No kernel-command-line disk override
+is supported. Use `tools/preview-install.sh` for read-only selection testing.
 
-```bash
-make validate
-setup-storage -s -f fai/config/disk_config/LUKS_BTRFS
-python3 tests/test-disk-selector.py
-```
+Do not use BIOS/SeaBIOS/CSM: Proxmox needs q35, OVMF, and an EFI disk. Keep KDBX on
+a separate small ext4 disk. For console access use FAI's createvt/verbose flags
+without inserting credentials in the boot command line.
 
-Actual installation requires mounted `FAI-BOOTSTRAP` media and an interactive console. The selector prompts on `/dev/console`; if that path fails it retries the active kernel console and `/dev/tty`. No production disk is supplied on the kernel command line. `hooks/partition.WORKSTATION` replaces FAI's standard partition task: it discovers physical disks, identifies and excludes the local FAI medium (or verifies network boot), prompts for OS and bootloader targets, requires a disk-specific `ERASE` token, persists stable identity, revalidates, and then calls `setup-storage -X -D <selected-kernel-device>`.
-
-The selector rejects loop, RAM/zram, optical, device-mapper, read-only, mounted, too-small, and installation-media disks. A local live boot must resolve to exactly one backing medium; an unknown or ambiguous source aborts. Stable `/dev/disk/by-id` paths are preferred and the resolved kernel path is supplied as FAI `disklist`/`-D`.
-
-The bootloader selector defaults to the OS disk. Choosing a different disk is rejected because this repository creates the ESP and encrypted system on one disk. The persisted `BOOT_DEVICE` and `PHYSICAL_BOOT_DEVICES` are checked again by the GRUB script against the disk backing `/boot/efi`.
-
-From a shell in the booted FAI environment, run `python3 "$FAI/assets/disk-selection/disk_selector.py" select --dry-run`. `tools/preview-install.sh` is the repository wrapper. Both run the same interactive selection with a `PREVIEW` token, do not persist selection, do not invoke setup-storage, and write nothing.
-
-Useful FAI logs are retained by FAI, but scripts never print credential contents. setup-storage's transient key is removed during installation after the bootstrap passphrase is verified.
+Build in a disposable privileged Debian trixie environment. The builder refreshes
+NFSROOT by default; `FAI_REUSE_NFSROOT=1` explicitly opts into reuse. Local log
+collection does not assume an NFS/SSH log server. FAI logs never include secrets.

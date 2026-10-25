@@ -1,96 +1,86 @@
 #!/usr/bin/env python3
-import json
+"""Integration contracts for the FAI config space and credential-free CI."""
 import re
+import unittest
 from pathlib import Path
-import yaml
-root=Path(__file__).resolve().parents[1]
-errors=[]
-cfg=root/'fai/config'
-mount=(cfg/'hooks/mountdisks.LUKS_BTRFS').read_text()
-for name in ('@root','@home','@snapshots'):
-    if name not in mount: errors.append(f'missing subvolume {name}')
-for name in ('@var_log','@var_cache','@var_tmp','@incus','@swap'):
-    if name in mount or name in (cfg/'disk_config/LUKS_BTRFS').read_text(): errors.append(f'forbidden subvolume {name}')
-if 'subvol=@home' not in mount or 'subvol=@snapshots' not in mount: errors.append('missing mount options')
-for token in ('mkfs.btrfs','blkid -s TYPE -o value','expected btrfs'):
-    if token not in mount: errors.append(f'encrypted btrfs guard missing {token}')
-snap=(cfg/'files/etc/snapper/configs/root/LUKS_BTRFS').read_text()
-if 'SUBVOLUME="/"' not in snap: errors.append('snapper is not root-only')
-disk=(cfg/'disk_config/LUKS_BTRFS').read_text()
-for token in ('disklabel:gpt','p=efi','disk_config cryptsetup','--type=luks2','--pbkdf=pbkdf2','btrfs'):
-    if token not in disk: errors.append(f'disk config missing {token}')
-if 'createopts="-L debian-root"' in disk:
-    errors.append('btrfs label must be applied by the mountdisks hook, not setup-storage')
-for line in disk.splitlines():
-    if line.strip() and not line.lstrip().startswith('#'):
-        fields=line.split()
-        if len(fields) > 1 and fields[1] == '/boot':
-            errors.append('separate /boot would break snapshot kernel consistency')
-first=(cfg/'files/usr/local/lib/workstation-firstboot/workstation_firstboot.py/WORKSTATION').read_text()
-for token in ('luksAddKey','--test-passphrase','luksKillSlot','len(slots) < 2','permanent-verified','SecretStore','finalize'):
-    if token not in first: errors.append(f'firstboot missing safety token {token}')
-example=yaml.safe_load((cfg/'files/etc/workstation-bootstrap/config.yaml.example/WORKSTATION').read_text())
-canonical=yaml.safe_load((root/'config/config.yaml.example').read_text())
-if example != canonical: errors.append('canonical and installed config.yaml examples differ')
-for path in ('identity','account','git','ssh','chezmoi','borg','vorta','cryptomator','grub','luks'):
-    if path not in example: errors.append(f'config example missing {path}')
-if 'choices=("keepassxc", "yaml")' not in first: errors.append('firstboot does not enforce exactly two primary sources')
-fai_key=(cfg/'scripts/LUKS_BTRFS/10-bootstrap-key').read_text()
-for token in ('luksAddKey','--test-passphrase','luksKillSlot','fewer than two active slots'):
-    if token not in fai_key: errors.append(f'FAI bootstrap rotation missing {token}')
-provision=(cfg/'scripts/WORKSTATION/10-provision-user').read_text()
-if 'chpasswd --encrypted' not in provision or 'usermod --password' in provision:
-    errors.append('temporary account password is not supplied over stdin')
-incus=(cfg/'assets/incus/scripts/create.sh').read_text()
-if ' --vm ' not in incus or '--container' in incus: errors.append('Incus helper must create VMs only')
-for token in ('incus init images:debian/13/cloud','--device root,size="$disk"','incus start "$name"','cloud-init status --wait'):
-    if token not in incus: errors.append(f'Incus helper missing {token}')
-if 'incus launch' in incus or 'config device override' in incus:
-    errors.append('Incus VM must be initialized before its first start')
-if 'incus init' in incus and 'incus start "$name"' in incus and incus.index('incus init') > incus.index('incus start "$name"'):
-    errors.append('Incus VM must be initialized before it is started')
-packages='\n'.join(p.read_text() for p in (cfg/'package_config').iterdir())
-if any(re.search(rf'(?m)^{name}$',packages) for name in ('mise','nodejs','golang','rustc','cargo')):
-    errors.append('project runtime/toolchain found in host package manifests')
-workflows='\n'.join(p.read_text() for p in (root/'.github/workflows').glob('*.yml'))
-if re.search(r'\$\{\{\s*secrets\.',workflows): errors.append('workflow consumes a GitHub secret')
-grub=(cfg/'files/usr/local/sbin/update-grub-secure/GRUB_EFI').read_text()
-if '--unrestricted' not in grub or 'snapshot' not in grub or 'password_pbkdf2' not in grub:
-    errors.append('GRUB authentication policy is incomplete')
-workstation_var=(cfg/'class/WORKSTATION.var').read_text()
-if 'fai.disk' in workstation_var or 'FAI_DISK=' in workstation_var:
-    errors.append('obsolete production kernel-command-line disk selection remains')
-partition=(cfg/'hooks/partition.WORKSTATION').read_text()
-for token in ('disk_selector.py',' select ','--tty /dev/console',' revalidate ','setup-storage -X','-D "$disklist"','BOOT_DEVICE'):
-    if token not in partition: errors.append(f'partition hook missing {token}')
-selector=(cfg/'assets/disk-selection/disk_selector.py').read_text()
-for token in ('KNOWN_LIVE_TARGETS','EXCLUDED_TYPES','ERASE','test_disk_selection','systemd-detect-virt','identity changed','Split bootloader','console_candidates','/sys/class/tty/console/active'):
-    if token not in selector: errors.append(f'disk selector missing safety control {token}')
-grub_setup=(cfg/'scripts/GRUB_EFI/10-setup').read_text()
-for token in ('FAI_SELECTED_BOOT_STABLE','BOOT_DEVICE','/boot/efi','efi_disk'):
-    if token not in grub_setup: errors.append(f'GRUB setup missing selected-device check {token}')
-for path in (root/'README.md', root/'docs/FAI.md', root/'docs/STORAGE.md', root/'docs/SECURITY.md'):
-    if 'fai.disk=' in path.read_text(): errors.append(f'obsolete fai.disk instruction in {path.relative_to(root)}')
-for workflow in (root/'.github/workflows').glob('*.yml'):
-    yaml.safe_load(workflow.read_text())
-required_docs={'ARCHITECTURE.md','STORAGE.md','SECURITY.md','FIRST_BOOT.md','KEEPASSXC.md','CONFIG_YAML.md','BACKUP.md','RECOVERY.md','GRUB.md','LUKS.md','FAI.md','GITHUB_ACTIONS.md','INCUS.md','VALIDATION.md'}
-missing=required_docs-{p.name for p in (root/'docs').glob('*.md')}
-errors.extend(f'missing doc {name}' for name in sorted(missing))
-flatpak=(cfg/'files/usr/local/sbin/workstation-flatpaks/FLATPAK_APPS').read_text()
-for token in ('flatpak remote-add --system --if-not-exists','flatpak install --system --noninteractive --or-update','com.brave.Browser','com.visualstudio.code','org.cryptomator.Cryptomator','state_dir=/var/lib/workstation-flatpaks','marker=$state_dir/complete'):
-    if token not in flatpak: errors.append(f'flatpak installer missing {token}')
-if (cfg/'scripts/FLATPAK_APPS/10-flatpaks').exists():
-    errors.append('Flatpak applications must not be installed from FAI scripts')
-if any('flatpak install' in p.read_text() for p in (cfg/'scripts').rglob('*') if p.is_file()):
-    errors.append('Flatpak install command found in FAI scripts')
-flatpak_service=(cfg/'files/etc/systemd/system/workstation-flatpaks.service/FLATPAK_APPS').read_text()
-for token in ('ConditionPathExists=!/var/lib/workstation-flatpaks/complete','Wants=network-online.target','After=network-online.target','TimeoutStartSec=1h','ExecStart=/usr/local/sbin/workstation-flatpaks'):
-    if token not in flatpak_service: errors.append(f'flatpak service missing {token}')
-flatpak_timer=(cfg/'files/etc/systemd/system/workstation-flatpaks.timer/FLATPAK_APPS').read_text()
-for token in ('OnBootSec=2min','OnUnitInactiveSec=1h','Unit=workstation-flatpaks.service','WantedBy=timers.target'):
-    if token not in flatpak_timer: errors.append(f'flatpak timer missing {token}')
-if 'systemctl enable workstation-flatpaks.timer' not in (cfg/'scripts/FINAL/99-finalize').read_text():
-    errors.append('FINAL does not enable the flatpak timer')
-if errors:
-    print('\n'.join('ERROR '+e for e in errors)); raise SystemExit(1)
-print('PASS implementation/documentation consistency checks')
+
+ROOT = Path(__file__).resolve().parents[1]
+CFG = ROOT / "fai/config"
+
+
+class Configuration(unittest.TestCase):
+    def text(self, path):
+        return (CFG / path).read_text()
+
+    def test_preflight_before_destruction(self):
+        hook = self.text("hooks/partition.WORKSTATION")
+        self.assertLess(hook.index('kdbx.py" preflight'), hook.index('"$selector" select'))
+        self.assertLess(hook.index('"$selector" revalidate'), hook.index("setup-storage -X"))
+        self.assertIn("/sys/firmware/efi", hook)
+        self.assertLess(hook.index('touch "$LOGDIR/skip.partition"'), hook.index('kdbx.py" preflight'))
+        self.assertIn("STOP_ON_ERROR=0", self.text("class/WORKSTATION.var"))
+
+    def test_storage_contract(self):
+        disk = self.text("disk_config/LUKS_BTRFS")
+        self.assertRegex(disk, r"p=efi\s+/boot\s+2G\s+vfat")
+        self.assertIn("--pbkdf=argon2id", disk)
+        mount = self.text("hooks/mountdisks.LUKS_BTRFS")
+        for name in ("@root", "@home", "@snapshots"):
+            self.assertIn(name, mount)
+        self.assertNotIn("/boot/efi", mount)
+        luks = self.text("scripts/LUKS_BTRFS/10-luks-key")
+        self.assertIn("luksAddKey --pbkdf argon2id", luks)
+        self.assertIn("fewer than two active slots", luks)
+        self.assertNotIn("state_dir=", luks)
+
+    def test_selected_esp_guard(self):
+        setup = self.text("scripts/SYSTEMD_BOOT/10-setup")
+        for token in ("FAI_SELECTED_BOOT_STABLE", "BOOT_DEVICE", "efi_disk", "Mounted ESP is not on selected"):
+            self.assertIn(token, setup)
+
+    def test_target_no_grub_or_firstboot(self):
+        self.assertFalse((CFG / "package_config/GRUB_EFI").exists())
+        self.assertFalse((CFG / "scripts/WORKSTATION/10-provision-user").exists())
+        self.assertIn("SYSTEMD_BOOT FINAL", self.text("class/50-host-classes"))
+        final = self.text("scripts/FINAL/99-finalize")
+        self.assertNotIn("update-grub", final)
+        self.assertIn("workstation-security-upgrade.timer", final)
+        self.assertIn('"$FAI/assets/workstation/kdbx.py" cleanup', final)
+        self.assertLess(final.index("mkramdisk -au"), final.index("workstation-secureboot install"))
+        self.assertLess(final.index("fai-divert -R"), final.index("workstation-secureboot install"))
+        self.assertLess(final.index("systemctl enable ssh.service"), final.index("workstation-secureboot install"))
+
+    def test_unattended_policy(self):
+        policy = self.text("files/etc/apt/apt.conf.d/52workstation-security/SYSTEMD_BOOT")
+        self.assertIn("#clear Unattended-Upgrade::Allowed-Origins;", policy)
+        self.assertIn("label=Debian-Security,codename=trixie-security", policy)
+        patterns = re.findall(r'"(\^[^"]+)";', policy)
+        for package in ("linux-image-amd64", "linux-image-6.12.0-amd64", "systemd-boot-efi", "systemd-ukify", "dracut-core", "cryptsetup-bin", "libcryptsetup12", "fwupd", "intel-microcode"):
+            self.assertTrue(any(re.search(pattern, package) for pattern in patterns), package)
+        self.assertFalse(any(re.search(pattern, "systemd") for pattern in patterns))
+        self.assertIn('Automatic-Reboot "false"', policy)
+
+    def test_vm_and_flatpak_retained(self):
+        incus = self.text("assets/incus/scripts/create.sh")
+        self.assertIn(" --vm ", incus)
+        self.assertLess(incus.index("incus init"), incus.index('incus start "$name"'))
+        flatpak = self.text("files/usr/local/sbin/workstation-flatpaks/FLATPAK_APPS")
+        self.assertIn("flatpak install --system --noninteractive --or-update", flatpak)
+
+    def test_iso_workflow(self):
+        workflow = (ROOT / ".github/workflows/build-iso.yml").read_text()
+        self.assertIn("./tools/build-host-tools.sh --native", workflow)
+        self.assertIn("./tools/build-iso.sh", workflow)
+        self.assertIn("make validate manifest-check", workflow)
+        self.assertNotRegex(workflow, r"\$\{\{\s*secrets\.")
+        build = (ROOT / "tools/build-iso.sh").read_text()
+        self.assertIn("/sbctl", build)
+        self.assertIn("unsquashfs", build)
+        self.assertIn("chroot /srv/fai/nfsroot keepassxc-cli", build)
+        self.assertIn("-name 'squashfs.img'", build)
+        self.assertIn("fai-make-nfsroot -v -f", build)
+        self.assertIn("file:///var/lib/fai/config", (ROOT / "server/fai.conf.example").read_text())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,2 @@
+layout=other
+# boot.py builds UKIs explicitly. Package hooks may only mark work as pending.

@@ -1,0 +1,6 @@
+# A recovery UKI must also boot a saved root with a writable ephemeral overlay.
+hostonly="no"
+add_dracutmodules+=" systemd systemd-cryptsetup crypt btrfs "
+add_drivers+=" overlay "
+install_items+=" /usr/lib/systemd/systemd-volatile-root /usr/lib/systemd/system/systemd-volatile-root.service "
+use_fstab="yes"

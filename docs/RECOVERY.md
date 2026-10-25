@@ -1,38 +1,51 @@
 # Recovery
 
-## Installation disk selection
+## Broken normal OS after an update
 
-Disk selection does not change disks until the exact `ERASE <selected-identifier>` phrase is accepted and final identity revalidation passes. If selection aborts, correct the ambiguity or mount state and restart the FAI partition task; do not bypass the filter. Review `disk-selection.log` in FAI logs. After a successful installation, the public selection record is retained at `/var/log/fai/disk-selection.json` and can help correlate the installed system with the original model, serial, WWN, and stable path.
+Choose a numbered **Recovery snapshot** entry in the visible systemd-boot menu.
+It boots the saved root with its matching kernel/initramfs and a writable tmpfs
+overlay. Changes to root are discarded at reboot; `/home` remains shared and
+writable. RAM limits apply, so avoid large installs while in recovery.
 
-If the local FAI medium cannot be distinguished, use known-good installation media or verified PXE/NFS/HTTP boot. Do not use the test-only VM override on physical hardware.
-
-## First-boot interruption
-
-Run `sudo workstation-firstboot status`. Correct the reported source or system issue and rerun the same `apply` command. Do not manually delete LUKS slots based only on numbers; slot identity is verified by test-passphrase.
-
-If status says the temporary key is missing while no permanent slot matches, stop and boot trusted rescue media. Use an independently stored LUKS recovery credential. Do not reboot after a post-removal verification failure until a known credential is tested.
-
-## Btrfs root rollback
-
-Boot trusted rescue media, identify the encrypted partition by stable ID, and use a known recovery credential:
+To keep a recovered root permanently:
 
 ```bash
-sudo cryptsetup open /dev/disk/by-id/REPLACE_LUKS_PARTITION cryptroot
-sudo mount -o subvolid=5 /dev/mapper/cryptroot /mnt
-sudo mv /mnt/@root /mnt/@root.failed.$(date -u +%Y%m%dT%H%M%SZ)
-sudo btrfs subvolume snapshot /mnt/@snapshots/NUMBER/snapshot /mnt/@root
-root_id=$(sudo btrfs subvolume show /mnt/@root | awk -F': *' '/Subvolume ID:/ {print $2; exit}')
-sudo btrfs subvolume set-default "$root_id" /mnt
-sudo umount /mnt
-sudo cryptsetup close cryptroot
+sudo workstation-secureboot status
+sudo workstation-rollback NUMBER --database /private/Workstation.kdbx
 ```
 
-Keep the old root until boot and application checks pass. `@home` is not rolled back. After initial setup, back up the LUKS2 header to separate encrypted/removable storage with `cryptsetup luksHeaderBackup`; a header backup is sensitive and must not live only on the protected disk.
+Rollback must run from recovery, refuses a mounted active `@root`, clones the
+selected protected snapshot, preserves the broken root as `@root-broken-*`, and
+publishes a signed normal UKI. Reboot manually. Do not delete the broken root until
+you have checked the restored system and recovered any required root data.
 
-## GRUB
+An interrupted rollback can leave `@root-rollback-candidate` or a renamed broken
+root. Use live media, unlock LUKS, mount Btrfs `subvolid=5`, and inspect before
+renaming or deleting anything. If no `@root` exists, restore the saved broken-root
+name or clone a protected snapshot to `@root`; do not overwrite existing roots.
+The recovery UKI still selects its snapshot independently of the `@root` name.
 
-If authenticated entries are malformed, boot trusted rescue media, unlock/mount root and ESP, chroot, inspect `/etc/grub.d/01_workstation_users`, then run `update-grub` followed by `/usr/local/sbin/update-grub-secure`. Never replace the hash with plaintext.
+## Lost/broken ESP or firmware entry
 
-## Lost KeePassXC/Borg access
+Boot external UEFI recovery media (temporarily disable Secure Boot if necessary),
+unlock LUKS, mount `@root`, `@home`, `@snapshots` and ESP at their usual locations,
+bind proc/sys/dev/run, and chroot. Restore systemd-boot/UKIs with offline KDBX and
+`workstation-secureboot sign`. Register the EFI entry with efibootmgr as needed.
+Do not run an unsigned bootctl update over working signed files.
 
-Use the separately stored database/Borg recovery package described in BACKUP.md. Both first-boot sources support removable media; YAML is the fallback when KeePassXC is unavailable.
+## Missing signing keys or changed firmware keys
+
+Existing signed UKIs can boot while their certificate is trusted. Without private
+keys you cannot sign replacements. Recover the offline KDBX backup or generate a
+new hierarchy, reset firmware to Setup Mode, and re-sign/re-enroll from trusted
+media. Factory-key reset may stop trusting the existing workstation UKIs.
+Record/test the Dell 5490 factory-key restore procedure before enrolling.
+
+## Space and backups
+
+The tool refuses maintenance when the ESP/root reserve is low. Retain the pinned
+known-good entry; remove only reviewed unneeded candidates or restore from live
+media. Snapper ordinary snapshots are not signed menu entries. A lost disk, LUKS
+header/passphrase, firmware failure, or corrupted shared home cannot be fixed by
+an on-disk root snapshot. Keep Borg backups, a private LUKS-header backup, two
+offline KDBX copies, and tested external recovery media.

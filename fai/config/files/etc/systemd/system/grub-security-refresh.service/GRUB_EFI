@@ -1,7 +1,0 @@
-[Unit]
-Description=Regenerate and verify authenticated GRUB menu
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/update-grub-secure

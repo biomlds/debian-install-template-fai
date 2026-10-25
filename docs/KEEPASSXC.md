@@ -1,20 +1,38 @@
-# KeePassXC schema
+# KeePassXC input
 
-Default database: `~/Documents/Secrets/Passwords.kdbx`. Override with `--database`. Default group prefix: `Workstation Bootstrap`; override with `--entry-prefix`.
+Keep two offline copies of the private database. Neither database nor attachments
+belong in Git, GitHub secrets, build artifacts, or the public ISO.
 
-Create these entries and exact attributes/attachments:
+Prepare an existing ext4 partition with `tools/prepare-kdbx-media.sh`. It copies
+the database as root-owned mode 0600 `Workstation.kdbx` and applies filesystem
+label `WORKSTATION-KDBX`; it does not format. The installer mounts it read-only.
+Use a separate removable device or Proxmox disk from the installation target.
 
-| Entry | Attributes / protected value | Attachments |
-|---|---|---|
-| `Identity` | `Username`, `FullName`, `Hostname`, optional `Timezone`, `Locale` | — |
-| `Login` | Password = permanent login password; optional `Groups` comma-separated (must include `sudo`) | — |
-| `Git` | `Name`, `Email` | — |
-| `SSH` | — | `id_ed25519`, `id_ed25519.pub`, optional `config` |
-| `Chezmoi` | `Repository`, optional `Branch` | — |
-| `Borg` | `Repository` | optional `borg_ed25519` |
-| `Vorta` | optional `ProfileName`, comma-separated `SourcePaths` | optional `excludes.txt` |
-| `Cryptomator` | `VaultPath` | — |
-| `GRUB` | optional `Username`; Password = permanent GRUB password | — |
-| `LUKS` | Password = permanent LUKS passphrase | — |
+Under group **Workstation Bootstrap**, create these entries (case-sensitive):
 
-The CLI asks for the database master password once per first-boot run and supplies it to `keepassxc-cli` over stdin, never argv. Only requested fields are extracted into root-only `/run` files. The database may be on removable or separately restored media.
+| Entry | Attributes or attachments |
+| --- | --- |
+| Identity | Username, FullName, Hostname; optional Timezone, Locale |
+| Login | Password (12+ characters, no colon/newline); optional Groups including sudo |
+| Git | Name, Email |
+| SSH | attachments id_ed25519 and id_ed25519.pub; optional config |
+| Chezmoi | Repository; optional Branch (main) |
+| Borg | Repository; optional borg_ed25519 attachment |
+| Vorta | optional ProfileName, SourcePaths (comma-separated), excludes.txt attachment |
+| Cryptomator | VaultPath relative to user's home, e.g. ~/Vaults/Personal |
+| LUKS | Password (16+ characters, no newline) |
+| SecureBoot | PK.key, PK.pem, KEK.key, KEK.pem, db.key, db.pem, GUID attachments |
+
+Timezone defaults to America/Edmonton and locale to en_CA.UTF-8. The Login and
+LUKS secrets are different credentials; the KDBX master is prompted separately.
+SSH private keys must be usable without an interactive passphrase during setup;
+the permanent user's SSH agent can be configured after login.
+
+Generate Secure Boot keys offline using [SECURE_BOOT.md](SECURE_BOOT.md). The old
+GRUB entry is obsolete. YAML is no longer accepted. Missing/invalid required
+inputs abort before disk selection; there is no interactive plaintext fallback.
+
+The master goes through stdin to KeePassXC CLI. Extracted private files are
+root-only tmpfs files, and captured tool output is suppressed on failure. After
+installation only intended account SSH keys remain on disk (inside LUKS);
+Secure Boot private keys do not.

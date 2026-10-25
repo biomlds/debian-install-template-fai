@@ -32,20 +32,21 @@ required = [
     "package_config/FAIBASE",
     "package_config/TRIXIE",
     "package_config/AMD64",
-    "package_config/GRUB_EFI",
+    "package_config/SYSTEMD_BOOT",
     "package_config/LUKS_BTRFS",
     "package_config/WORKSTATION",
     "package_config/SWAY",
     "package_config/BACKUP",
     "package_config/INCUS",
     "package_config/FLATPAK_APPS",
-    "scripts/LUKS_BTRFS/10-bootstrap-key",
+    "scripts/LUKS_BTRFS/10-luks-key",
     "scripts/LUKS_BTRFS/20-snapper",
-    "scripts/GRUB_EFI/10-setup",
+    "scripts/SYSTEMD_BOOT/10-setup",
     "scripts/FINAL/99-finalize",
     "files/etc/systemd/system/workstation-flatpaks.service/FLATPAK_APPS",
     "files/etc/systemd/system/workstation-flatpaks.timer/FLATPAK_APPS",
-    "files/usr/local/lib/workstation-firstboot/workstation_firstboot.py/WORKSTATION",
+    "assets/workstation/kdbx.py",
+    "assets/workstation/boot.py",
     "files/usr/local/sbin/workstation-flatpaks/FLATPAK_APPS",
     "assets/disk-selection/disk_selector.py",
 ]
@@ -74,7 +75,7 @@ else:
         line = raw.split("#", 1)[0].strip()
         if line and not line.startswith("PACKAGES "):
             nfsroot_packages.update(line.split())
-    for package in ("dracut", "initramfs-tools-"):
+    for package in ("dracut", "initramfs-tools-", "kbd", "dbus", "keepassxc-minimal", "libpcsclite1"):
         if package not in nfsroot_packages:
             errors.append(f"server/NFSROOT missing {package}")
 
@@ -109,9 +110,6 @@ for path in ROOT.rglob("*"):
             errors.append(f"bash syntax {path.relative_to(ROOT)}: {result.stderr.strip()}")
 
 pyfiles = [path for path in ROOT.rglob("*.py") if path.is_file() and not ignored(path)]
-firstboot = CFG / "files/usr/local/lib/workstation-firstboot/workstation_firstboot.py/WORKSTATION"
-if firstboot not in pyfiles:
-    pyfiles.append(firstboot)
 for path in pyfiles:
     try:
         compile(path.read_text(), str(path), "exec")
@@ -119,7 +117,6 @@ for path in pyfiles:
         errors.append(f"python syntax {path.relative_to(ROOT)}: {exc}")
 
 yaml_files = [path for path in list(ROOT.rglob("*.yaml")) + list(ROOT.rglob("*.yml")) if not ignored(path)]
-yaml_files.append(CFG / "files/etc/workstation-bootstrap/config.yaml.example/WORKSTATION")
 for path in yaml_files:
     try:
         yaml.safe_load(path.read_text())
@@ -145,7 +142,7 @@ for path in sorted((CFG / "package_config").iterdir()):
         seen.add((mode, line))
 
 secret_patterns = [
-    re.compile(r"BEGIN (?:OPENSSH|RSA|EC|DSA) PRIVATE KEY"),
+    re.compile(r"-----BEGIN (?:OPENSSH |RSA |EC |DSA |ENCRYPTED )?PRIVATE KEY-----"),
     re.compile(r"(?i)(?:password|passphrase)[ \t]*[:=][ \t]*[\"'](?!REPLACE|/media|/run|/var|\$)[^\"'\r\n]{8,}[\"']"),
     re.compile(r"\$\{\{\s*secrets\."),
 ]

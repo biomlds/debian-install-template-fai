@@ -1,17 +1,22 @@
-# LUKS temporary-to-permanent rotation
+# LUKS2
 
-FAI lets setup-storage create LUKS2, then adds the removable-media bootstrap passphrase to a distinct PBKDF2 keyslot, verifies it, and removes setup-storage's generated key. Installation stops if fewer than two active slots exist before removal or verification fails.
+setup-storage creates LUKS2 with Argon2id. `10-luks-key` adds the permanent KDBX
+passphrase into a distinct Argon2id slot, verifies it, and only then removes the
+setup-storage slot. It refuses to remove a last slot and verifies the removed key
+no longer unlocks. The remaining permanent slot is checked again.
 
-First boot locates root with `findmnt`, device-mapper status, and block ancestry, verifies the LUKS UUID against installation metadata, and enumerates active LUKS2 keyslots from JSON metadata. It then:
+`FAI_KEEP_CRYPTKEYFILE=1` preserves the generated setup key only until this
+transition; the script deletes it and writes a passphrase-only crypttab:
 
-1. Finds whether the permanent passphrase already matches a slot (resume path).
-2. Adds it to an explicitly free PBKDF2 slot using the temporary key.
-3. Tests the new slot with `cryptsetup open --test-passphrase`.
-4. Records `permanent-verified` state.
-5. Refuses removal unless at least two slots are active and permanent/temporary slots differ.
-6. Removes the temporary slot using the verified permanent credential.
-7. Tests the permanent slot again, then erases/removes the temporary key file.
+```text
+cryptroot UUID=<LUKS UUID> none luks
+```
 
-Interruption before step 5 leaves both keys. Interruption after step 5 leaves the permanent key and a resumable journal. The operation never intentionally removes the final active slot.
+No temporary LUKS credential is copied to the target for first boot. UKIs embed
+the LUKS UUID and mapper name, never a passphrase. TPM auto-unlock is disabled.
 
-Read-only status: `sudo workstation-firstboot status`. Non-disk test: `tests/test-luks-rotation-image.sh` creates a temporary regular file in `/dev/shm` and never opens/modifies a block device.
+Back up the LUKS header to private external storage after installation. To change
+the passphrase use cryptsetup's verified key-management workflow, update KDBX,
+and test an unlock before removing any old slot. Do not remove the last working
+credential. A lost passphrase and absent recovery slot cannot be repaired by an
+OS snapshot, Secure Boot key, or firmware reset.

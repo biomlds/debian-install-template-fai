@@ -1,5 +1,0 @@
-PACKAGES install
-efibootmgr
-grub-efi-amd64-bin
-grub-efi-amd64-signed
-shim-signed

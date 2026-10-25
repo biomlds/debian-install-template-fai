@@ -1,0 +1,4 @@
+#!/bin/bash
+set +x
+set -Eeuo pipefail
+python3 "$FAI/assets/workstation/kdbx.py" identity --target "$target"

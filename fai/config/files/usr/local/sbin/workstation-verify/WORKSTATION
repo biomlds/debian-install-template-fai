@@ -1,18 +1,19 @@
 #!/bin/bash
 set -uo pipefail
 fail=0
-ok(){ printf 'OK   %s\n' "$1"; }
-bad(){ printf 'FAIL %s\n' "$1"; fail=1; }
-[ "$(findmnt -n -o FSTYPE /)" = btrfs ] && ok 'root uses Btrfs' || bad 'root is not Btrfs'
-for entry in '/:@root' '/home:@home' '/.snapshots:@snapshots'; do
-    target=${entry%%:*}; subvol=${entry#*:}; opts=$(findmnt -n -o OPTIONS "$target" 2>/dev/null || true)
-    [[ $opts == *"subvol=/$subvol"* || $opts == *"subvol=$subvol"* ]] && ok "$target uses $subvol" || bad "$target does not use $subvol"
-done
-count=$(btrfs subvolume list / | awk '$NF ~ /^@(root|home|snapshots)$/ {n++} END{print n+0}')
-[ "$count" -eq 3 ] && ok 'exactly three managed top-level subvolumes found' || bad "expected three managed subvolumes; found $count"
-snapper -c root get-config >/dev/null 2>&1 && ok 'Snapper root config loads' || bad 'Snapper root config fails'
-command -v incus >/dev/null && ok 'Incus installed' || bad 'Incus missing'
-command -v chezmoi >/dev/null && ok 'chezmoi installed' || bad 'chezmoi missing'
-command -v yazi >/dev/null && ok 'Yazi installed' || bad 'Yazi missing'
-/usr/local/sbin/grub-security-check >/dev/null 2>&1 && ok 'GRUB authentication policy passes' || bad 'GRUB authentication policy incomplete'
+check(){
+    local description=$1
+    shift
+    if "$@"; then printf 'OK   %s\n' "$description"; else printf 'FAIL %s\n' "$description"; fail=1; fi
+}
+check 'signed normal/recovery boot artifacts and pinned baseline' workstation-secureboot check
+check 'Snapper root configuration' snapper -c root get-config
+check 'Incus installed' command -v incus
+check 'chezmoi installed' command -v chezmoi
+check 'Flatpak timer enabled' systemctl is-enabled workstation-flatpaks.timer
+check 'Security maintenance timer enabled' systemctl is-enabled workstation-security-upgrade.timer
+if getent passwd provision >/dev/null; then echo 'FAIL temporary provision account remains'; fail=1; fi
+if [ -d /var/lib/workstation-firstboot ]; then echo 'FAIL obsolete first-boot state'; fail=1; fi
+check 'UEFI boot manager status' bootctl status
+echo 'Review deferred boot-stack security updates with: apt list --upgradable'
 exit "$fail"

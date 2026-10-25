@@ -1,97 +1,87 @@
 # Debian FAI workstation
 
-A ready-to-use FAI config space for a reproducible **Debian 13 Stable**, amd64/UEFI, encrypted Sway workstation. Public machine policy is separated from private first-boot identity and credentials.
+Credential-free Debian 13 amd64/UEFI installer for an encrypted Sway workstation.
+FAI injects permanent identity from external KeePassXC media before partitioning.
+The target uses custom-key Secure Boot, systemd-boot, signed UKIs, and selectable
+protected Btrfs recovery snapshots.
+
+**Integration status:** repository tests cover policy and failure handling. Actual
+OVMF/Dell Secure Boot installation, recovery-overlay boot, and rollback still need
+the acceptance tests in [VALIDATION.md](docs/VALIDATION.md). Use disposable disks
+until those tests pass; this branch changes the installation/credential model.
 
 ## Architecture
 
-- GPT with a 1 GiB EFI System Partition and one LUKS2/Btrfs system partition.
-- Exactly `@root`, `@home`, and `@snapshots`; Snapper manages `/` only.
-- `/boot` is inside encrypted `@root`, allowing snapshots to retain matching kernels/initramfs.
-- FAI creates only the temporary `provision` account and a temporary LUKS credential from removable `FAI-BOOTSTRAP` media.
-- First boot creates a separate permanent user from **KeePassXC by default** or `config.yaml`, configures GRUB and rotates LUKS safely, then requires a verified permanent-user login before `provision` can be removed.
-- Project runtimes stay in Incus VMs; the host has no mise or project language stacks.
+- GPT: **2 GiB FAT32 ESP at `/boot`**, remaining space LUKS2 **Argon2id**.
+- Btrfs `@root`, `@home`, `@snapshots`; root-only Snapper.
+- Signed normal UKI plus three protected recovery snapshots/UKIs. A recovery boot
+  has a writable RAM overlay; changes to root disappear on reboot.
+- Pin the last **boot-tested** recovery snapshot until explicitly replaced.
+- Signing keys stay offline in KDBX; manual boot-stack updates require an unlock.
+- Daily unattended **Debian security-only userspace** upgrades, with pre-upgrade
+  snapshots, a boot-stack blacklist, and no automatic reboot.
+- Incus **VMs**, existing Flatpak application timer, Borg/Vorta, Cryptomator,
+  KeePassXC, and manual chezmoi dotfile setup remain available.
+- No temporary provision account, first-boot credential rotation, YAML secret
+  input, target GRUB, or grub-btrfs. FAI's ISO bootloader remains separate.
 
-## Quick start
+## Build
 
-1. **Validate without touching disks**
+```bash
+make validate manifest-check
+./tools/build-host-tools.sh       # isolated Debian 13 Docker/Podman build
+sudo ./tools/build-iso.sh          # disposable Debian 13 root build environment
+```
 
-   ```bash
-   make validate
-   ```
+The [GitHub ISO workflow](.github/workflows/build-iso.yml) builds the pinned host
+tools, FAI NFSROOT, ISO, SHA-256 files, and artifacts on manual dispatch or `v*`
+tags. It uses no repository secrets. NFSROOT is the installer runtime embedded in
+the ISO; offline installation does **not** need an NFS server.
 
-2. **Build host tools and ISO**
+## Install
 
-   ```bash
-   ./tools/build-host-tools.sh          # isolated Podman/Docker build
-   sudo ./tools/build-iso.sh
-   ```
-
-   GitHub Actions validates every change. ISO building runs only on explicit dispatch or `v*` tags and uses no repository secrets.
-
-3. **Create temporary install credentials**
-
-   ```bash
-   sudo ./tools/prepare-bootstrap.sh /dev/disk/by-id/REMOVABLE_PARTITION provision.pub
-   ```
-
-   Boot FAI normally with an interactive console:
-
-   ```text
-   FAI_FLAGS=verbose,sshd,createvt,reboot
-   ```
-
-   Immediately before partitioning, FAI lists eligible physical disks with stable
-   IDs, model, serial, transport, size, and current layout. Select the OS disk and
-   bootloader disk; this single-disk design requires them to be the same. You must
-   type `ERASE <selected-identifier>` before setup-storage runs (the stable-ID
-   basename when available, otherwise the kernel name). EOF, cancellation,
-   mounted disks, installation media, identity changes, and ambiguous boot media
-   abort installation.
-
-   From a shell in the booted FAI environment, run
-   `python3 "$FAI/assets/disk-selection/disk_selector.py" select --dry-run`.
-   `tools/preview-install.sh` is the repository wrapper for the same operation.
-   Both use a `PREVIEW` confirmation and perform no writes.
-
-   After installation, remove `FAI-BOOTSTRAP` before first boot. Enter the temporary
-   LUKS passphrase and sign in as `provision`.
-
-4. **First boot — KeePassXC default**
+1. Prepare KDBX entries and offline PK/KEK/db keys using
+   [KEEPASSXC.md](docs/KEEPASSXC.md) and [SECURE_BOOT.md](docs/SECURE_BOOT.md).
+2. Copy the database to an existing ext4 removable partition:
 
    ```bash
-   sudo workstation-firstboot validate-input --database /media/secure/Passwords.kdbx
-   sudo workstation-firstboot apply --database /media/secure/Passwords.kdbx
+   sudo ./tools/prepare-kdbx-media.sh /dev/disk/by-id/REMOVABLE_PARTITION /private/Workstation.kdbx
    ```
 
-   Or use YAML:
+3. Boot FAI in **UEFI** mode (Proxmox: q35 + OVMF + EFI disk). New custom-key
+   enrollment requires firmware Setup Mode; an unsigned ISO may require Secure
+   Boot disabled. Have firmware recovery instructions available.
+4. The console prompts for the KDBX master before disk selection. Missing inputs
+   abort before partitioning. Select the same OS/boot disk and type the exact
+   `ERASE <identifier>` token. This erases the selected disk.
+5. FAI installs the permanent account, replaces the temporary setup-storage LUKS
+   slot, builds/signs boot artifacts, enrolls keys, and removes transient secrets.
+6. Remove KDBX media. Enable Secure Boot if required by firmware. Boot the recovery
+   entry first, verify the desktop/network and your data, then pin it:
 
    ```bash
-   cp config/config.yaml.example /media/secure/config.yaml
-   chmod 600 /media/secure/config.yaml
-   sudo workstation-firstboot validate-input --source yaml --config /media/secure/config.yaml
-   sudo workstation-firstboot apply --source yaml --config /media/secure/config.yaml
+   sudo workstation-secureboot confirm
    ```
 
-   The tool creates the permanent user, checks password/PAM and sudo, installs SSH/Git/chezmoi state, records Borg/Vorta and Cryptomator locations, installs a local GRUB PBKDF2 credential, and rotates LUKS. It is resumable: rerun the same command after correcting an error. Borg and Cryptomator passphrases are entered after login, not during first boot.
+7. Reboot into the normal Debian entry and run `sudo workstation-verify`.
+   Initialize Incus with `sudo incus-init-workstation`; configure Vorta using
+   `~/.config/borg/VORTA-FIRST-LOGIN.txt`; apply your chezmoi repository manually.
+   Flatpak applications install in the background and retry hourly.
 
-5. **Verify and finish**
+## Updates and recovery
 
-   ```bash
-   sudo workstation-firstboot status
-   sudo workstation-verify
-   # Log out and log in as the permanent user, then:
-   sudo workstation-firstboot finalize
-   ```
+```bash
+sudo workstation-update --database /private/Workstation.kdbx
+sudo workstation-secureboot snapshot --database /private/Workstation.kdbx
+sudo workstation-secureboot status
+sudo workstation-secureboot check
+```
 
-   Flatpak applications install in the background once the first-boot network is
-   online. Check progress with `journalctl -u workstation-flatpaks.service`;
-   failures retry hourly.
+The update command signs a pre-update recovery entry before APT runs, then signs
+the new normal UKI. It never reboots automatically. Recovery entries are labelled
+with snapshot numbers in systemd-boot. To permanently roll back, boot a recovery
+entry and use `workstation-rollback <number> --database /private/Workstation.kdbx`.
+See [RECOVERY.md](docs/RECOVERY.md) for interruption handling and limitations.
 
-6. **Restore and initialize services**
-
-   - Apply/inspect dotfiles: `chezmoi diff && chezmoi apply`.
-   - In Vorta, add the Borg repository recorded in `~/.config/borg/bootstrap.env`, restore personal files if needed, then configure backup of all personal files, the KeePassXC database, and local Cryptomator vault ciphertext.
-   - Initialize Incus: `sudo incus-init-workstation`; create a VM with `/usr/local/share/workstation-bootstrap/incus/scripts/create.sh devbox dev`.
-
-Read [FAI.md](docs/FAI.md), [VALIDATION.md](docs/VALIDATION.md),
-[SECURITY.md](docs/SECURITY.md), and [RECOVERY.md](docs/RECOVERY.md) before installation.
+Read [FAI.md](docs/FAI.md), [SECURITY.md](docs/SECURITY.md), and
+[VALIDATION.md](docs/VALIDATION.md) before building or installing.

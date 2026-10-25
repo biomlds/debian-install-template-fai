@@ -1,11 +1,31 @@
 # Architecture
 
-FAI owns generic hardware/OS policy. First boot owns permanent identity. This boundary prevents a public repository, workflow log, or ISO from containing personal credentials.
+FAI NFSROOT is embedded in the ISO. The installer remains amd64/UEFI-only; the
+target boot chain is firmware → locally signed systemd-boot → signed UKI → dracut
+→ passphrase-unlocked LUKS2 Argon2id → Btrfs.
 
-FAI installs Debian Stable, storage, packages, the `provision` account, security tooling, starter chezmoi data, Incus VM templates, and the first-boot engine. It consumes only temporary values from removable `FAI-BOOTSTRAP` media. Immediately before the destructive partition task, an interactive hook discovers physical disks, excludes mounted and installation-media devices, selects OS and bootloader targets, persists a stable identity fingerprint, revalidates it, and calls setup-storage. The bootloader target defaults to and must equal the OS target for this single-disk architecture.
+External ext4 `WORKSTATION-KDBX` media supplies permanent identity, LUKS passphrase,
+SSH keys, and offline PK/KEK/db signing keys. The partition hook independently
+validates all inputs before invoking disk selection or setup-storage. Secrets
+live on tmpfs; only intended installed identity files and public certificates
+persist. The permanent LUKS passphrase never becomes a target keyfile.
 
-First boot normalizes KeePassXC or YAML into one in-memory model, validates every mandatory field, and performs journaled stages: account, identity/SSH, chezmoi, backup locations, GRUB, LUKS rotation, and verification. State contains stage names and non-secret fingerprints only. Secrets remain in memory or root-only `/run` files and are cleaned on exit.
+The 2 GiB ESP is mounted at `/boot`. Normal kernels installed by Debian remain
+there as package artifacts, but only signed UKIs are systemd-boot entries.
+Matching kernel/initrd archives inside root are captured with protected snapshots.
+Recovery UKIs select their snapshot explicitly and request a RAM overlay. Snapshot
+fstab is disabled for recovery and explicit signed mount arguments select home,
+snapshots, and ESP without remounting the wrong root.
 
-Flatpak applications are installed by a first-boot systemd timer rather than the FAI chroot, so installation never depends on bubblewrap, FUSE, or a running system bus inside the target. The timer retries failures and records success in `/var/lib/workstation-flatpaks/complete`.
+`boot.py` owns signature verification, publication, snapshot registry, retention,
+update coordination, and rollback. The last boot-tested baseline survives pruning.
+APT hooks only mark boot-stack changes pending; diverted Debian loader hooks and
+masked bootloader updater prevent unsigned ESP publication.
 
-The permanent account is created, never produced by renaming `provision`. Final removal of `provision` is a separate command that must be run through sudo from the verified permanent account.
+Security-only unattended userspace upgrades run through a shared maintenance
+lock, create ordinary cleanup-managed snapshots, and never reboot. Boot-stack
+security updates require KDBX and `workstation-update`. Incus remains VM-only;
+Flatpak applications retain their existing independent installation timer.
+
+See [REWORK.md](../REWORK.md) for design decisions and [VALIDATION.md](VALIDATION.md)
+for the still-required real boot acceptance gates.

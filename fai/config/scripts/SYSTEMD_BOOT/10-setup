@@ -1,0 +1,46 @@
+#!/bin/bash
+set -Eeuo pipefail
+selection_env=${LOGDIR:-/tmp/fai}/disk-selection.env
+[ -s "$selection_env" ] || { echo "Missing persisted bootloader selection." >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$selection_env"
+[ "$FAI_SELECTED_BOOT_STABLE" = "$FAI_SELECTED_OS_STABLE" ] || exit 1
+[ "$(readlink -f "$FAI_SELECTED_BOOT_STABLE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || exit 1
+# shellcheck disable=SC1090
+source "${LOGDIR:-/tmp/fai}/disk_var.sh"
+[ "$(readlink -f "$BOOT_DEVICE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || exit 1
+mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
+efi_source=$(findmnt -n -o SOURCE "$target/boot")
+efi_disk=$(lsblk -sno PATH,TYPE "$efi_source" | awk '$2=="disk" {print $1; exit}')
+[ "$(readlink -f "$efi_disk")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "Mounted ESP is not on selected bootloader disk." >&2; exit 1;
+}
+fcopy -riM /etc/kernel
+fcopy -riM /etc/dracut.conf.d
+fcopy -iM /etc/fwupd/fwupd.conf
+fcopy -riM /etc/apt/apt.conf.d
+fcopy -riM /etc/systemd/system
+fcopy -riM /usr/local/sbin
+chmod 0755 "$target/etc/kernel/install.d/"*.install "$target/etc/kernel/postinst.d/zz-workstation-uki" \
+    "$target/etc/kernel/postrm.d/zz-workstation-uki" "$target/usr/local/sbin/"workstation-*
+# Divert Debian hooks rather than relying on their current implementation.
+# Diverted copies live outside run-parts directories and cannot write the ESP.
+install -d -m 0755 "$target/usr/local/share/workstation/diverted"
+for hook in /etc/kernel/postinst.d/zz-systemd-boot /etc/kernel/postrm.d/zz-systemd-boot \
+    /etc/initramfs/post-update.d/systemd-boot; do
+    saved=/usr/local/share/workstation/diverted/${hook//\//_}
+    $ROOTCMD dpkg-divert --local --add --rename --divert "$saved" "$hook"
+    install -d -m 0755 "$target$(dirname "$hook")"
+    printf '#!/bin/sh\nexit 0\n' > "$target$hook"
+    chmod 0755 "$target$hook"
+done
+$ROOTCMD systemctl mask systemd-boot-update.service apt-daily-upgrade.service apt-daily-upgrade.timer
+install -d -m 0700 "$target/boot/loader"
+cat > "$target/boot/loader/loader.conf" <<'LOADER'
+default debian.efi
+timeout 5
+editor no
+auto-entries yes
+auto-firmware yes
+LOADER
+# Defer bootctl install until FINAL so no package can replace signed artifacts.

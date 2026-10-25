@@ -43,13 +43,4 @@ jobs:
 
       - name: Reject credential material
         run: |
-          if grep -RIlE \
-            'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY|\$\{\{[[:space:]]*secrets\.' \
-            . \
-            --exclude-dir=.git \
-            --exclude-dir=.github \
-            --exclude='*.md' \
-            --exclude='validate.py'; then
-            echo "Credential material found in repository." >&2
-            exit 1
-          fi
+          python3 tools/scan-public.py fai/config

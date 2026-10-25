@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Shared installer/signing input. Never print captured secret-tool output."""
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import re
+import resource
+import shutil
+import shlex
+import stat
+import subprocess
+import sys
+import termios
+import uuid
+from pathlib import Path
+
+PREFIX = "Workstation Bootstrap"
+MEDIA = Path("/run/fai/kdbx")
+SECRETS = Path("/run/fai/workstation-secrets")
+EFI = Path("/sys/firmware/efi/efivars")
+
+
+def run(args, data=None):
+    result = subprocess.run([str(x) for x in args], input=data, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(f"{Path(str(args[0])).name} failed (output suppressed)")
+    return result.stdout
+
+
+def write(path, data, mode=0o600):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, "wb") as stream:
+        os.fchmod(stream.fileno(), mode)
+        stream.write(data if isinstance(data, bytes) else data.encode())
+
+
+def safe_database(path):
+    path = Path(path).absolute()
+    if any(p.is_symlink() for p in [path, *path.parents]):
+        raise RuntimeError("Database path may not contain symlinks")
+    info = path.stat()
+    owners = {0, os.getuid(), int(os.environ.get("SUDO_UID", os.getuid()))}
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid not in owners:
+        raise RuntimeError("Database must be a private regular file owned by root or invoking user")
+    return path
+
+
+def mount_media():
+    sources = run(["blkid", "-t", "LABEL=WORKSTATION-KDBX", "-o", "device"]).decode().splitlines()
+    if len(sources) != 1:
+        raise RuntimeError("Require exactly one WORKSTATION-KDBX filesystem")
+    source = Path(sources[0]).resolve()
+    if run(["blkid", "-s", "TYPE", "-o", "value", source]).strip() != b"ext4":
+        raise RuntimeError("KDBX media must be ext4")
+    MEDIA.mkdir(parents=True, exist_ok=True)
+    mounted = subprocess.run(["mountpoint", "-q", str(MEDIA)]).returncode == 0
+    if not mounted:
+        run(["mount", "-o", "ro,nosuid,nodev,noexec", source, MEDIA])
+    actual = Path(run(["findmnt", "-rn", "-o", "SOURCE", "--target", MEDIA]).decode().strip()).resolve()
+    options = run(["findmnt", "-rn", "-o", "OPTIONS", "--target", MEDIA]).decode().strip().split(",")
+    if actual != source or not {"ro", "nosuid", "nodev", "noexec"}.issubset(options):
+        raise RuntimeError("Unexpected KDBX mount source/options")
+    if sorted(p.name for p in MEDIA.glob("*.kdbx")) != ["Workstation.kdbx"]:
+        raise RuntimeError("Require exactly Workstation.kdbx on media")
+    return safe_database(MEDIA / "Workstation.kdbx")
+
+
+def validate_keys(root):
+    for name in ("PK", "KEK", "db"):
+        key = root / "keys" / name / f"{name}.key"
+        cert = root / "keys" / name / f"{name}.pem"
+        private_pub = run(["openssl", "pkey", "-in", key, "-pubout"])
+        public_pub = run(["openssl", "x509", "-in", cert, "-pubkey", "-noout"])
+        if private_pub != public_pub:
+            raise RuntimeError(f"SecureBoot {name} key/certificate mismatch")
+        run(["openssl", "x509", "-in", cert, "-checkend", "0", "-noout"])
+    uuid.UUID((root / "GUID").read_text().strip())
+
+
+def firmware_mode(root):
+    variables = list(EFI.glob("SetupMode-*"))
+    if len(variables) != 1:
+        raise RuntimeError("UEFI variables unavailable")
+    if variables[0].read_bytes()[4:5] == b"\x01":
+        return "setup"
+    for name in ("PK", "KEK", "db"):
+        cert = run(["openssl", "x509", "-in", root / "keys" / name / f"{name}.pem", "-outform", "DER"])
+        enrolled = list(EFI.glob(f"{name}-*"))
+        if len(enrolled) != 1 or cert not in enrolled[0].read_bytes()[4:]:
+            raise RuntimeError("Firmware keys differ from KDBX; enter Setup Mode before installing")
+    return "enrolled"
+
+
+def extract(database, root, *, identity=True, console=False):
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    database = safe_database(database)
+    if run(["findmnt", "-n", "-o", "FSTYPE", "--target", root.parent]).strip() != b"tmpfs":
+        raise RuntimeError("Secret directory must reside on tmpfs")
+    root.mkdir(mode=0o700, parents=False, exist_ok=False)
+    os.chmod(root, 0o700)
+    master = bytearray()
+    try:
+        if console:
+            with open("/dev/console", "r+") as terminal:
+                settings = termios.tcgetattr(terminal.fileno())
+                private = settings.copy()
+                private[3] &= ~termios.ECHO
+                try:
+                    termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
+                    terminal.write("KeePassXC master password: ")
+                    terminal.flush()
+                    master.extend(terminal.readline().rstrip("\r\n").encode())
+                finally:
+                    termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
+                    terminal.write("\n")
+                    terminal.flush()
+        else:
+            master.extend(getpass.getpass("KeePassXC master password: ").encode())
+        if not master:
+            raise RuntimeError("Empty database master password")
+
+        def cli(*args):
+            return run(["keepassxc-cli", *args], bytes(master) + b"\n")
+
+        def attr(entry, name, default=None):
+            try:
+                value = cli("show", "-q", "-s", "-a", name, database, f"{PREFIX}/{entry}").decode().rstrip("\r\n")
+            except RuntimeError:
+                if default is None:
+                    raise RuntimeError(f"Missing KDBX field: {entry}.{name}") from None
+                value = ""
+            value = value or default
+            if value is None or "\n" in value or "\r" in value or "\x00" in value:
+                raise RuntimeError(f"Invalid KDBX field: {entry}.{name}")
+            return value
+
+        def attachment(entry, name, destination, optional=False):
+            destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                cli("attachment-export", "-q", database, f"{PREFIX}/{entry}", name, destination)
+                if not destination.is_file() or not destination.stat().st_size:
+                    raise RuntimeError("Empty attachment")
+                os.chmod(destination, 0o600)
+            except RuntimeError:
+                destination.unlink(missing_ok=True)
+                if not optional:
+                    raise RuntimeError(f"Missing KDBX attachment: {entry}/{name}") from None
+
+        for name in ("PK", "KEK", "db"):
+            for suffix in ("key", "pem"):
+                attachment("SecureBoot", f"{name}.{suffix}", root / "keys" / name / f"{name}.{suffix}")
+        attachment("SecureBoot", "GUID", root / "GUID")
+        validate_keys(root)
+        if not identity:
+            return
+        fields = {
+            "username": ("Identity", "Username"), "full_name": ("Identity", "FullName"),
+            "hostname": ("Identity", "Hostname"), "timezone": ("Identity", "Timezone", "America/Edmonton"),
+            "locale": ("Identity", "Locale", "en_CA.UTF-8"), "groups": ("Login", "Groups", "sudo,audio,video,render,input,plugdev,incus-admin"),
+            "git_name": ("Git", "Name"), "git_email": ("Git", "Email"),
+            "chezmoi_repo": ("Chezmoi", "Repository"), "chezmoi_branch": ("Chezmoi", "Branch", "main"),
+            "borg_repository": ("Borg", "Repository"), "vorta_profile": ("Vorta", "ProfileName", "Personal files"),
+            "vorta_sources": ("Vorta", "SourcePaths", "~"), "vault": ("Cryptomator", "VaultPath"),
+        }
+        model = {key: attr(*spec) for key, spec in fields.items()}
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}", model["username"]) or model["username"] in {"root", "provision"}:
+            raise RuntimeError("Invalid permanent username")
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}", model["hostname"]) or ":" in model["full_name"]:
+            raise RuntimeError("Invalid hostname/full name")
+        groups = model["groups"].split(",")
+        if "sudo" not in groups or any(not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}", g) for g in groups):
+            raise RuntimeError("Invalid groups or missing sudo")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+_[A-Za-z0-9_.@-]+", model["locale"]):
+            raise RuntimeError("Invalid locale")
+        if "@" not in model["git_email"]:
+            raise RuntimeError("Invalid Git email")
+        vault = model["vault"].replace("$HOME", "~", 1)
+        if vault.startswith("~/"):
+            vault = vault[2:]
+        if vault != "~" and (Path(vault).is_absolute() or ".." in Path(vault).parts):
+            raise RuntimeError("Cryptomator path must be relative to permanent user's home")
+        zone = (Path("/usr/share/zoneinfo") / model["timezone"]).resolve()
+        if not zone.is_relative_to("/usr/share/zoneinfo") or not zone.is_file():
+            raise RuntimeError("Invalid timezone")
+        for entry, name, minimum in (("Login", "login", 12), ("LUKS", "luks", 16)):
+            value = attr(entry, "Password")
+            if len(value) < minimum or (entry == "Login" and ":" in value):
+                raise RuntimeError(f"Invalid {entry} credential")
+            write(root / name, value)
+        for entry, name, destination, optional in (
+            ("SSH", "id_ed25519", "ssh-private", False), ("SSH", "id_ed25519.pub", "ssh-public", False),
+            ("SSH", "config", "ssh-config", True), ("Borg", "borg_ed25519", "borg-key", True),
+            ("Vorta", "excludes.txt", "vorta-excludes", True),
+        ):
+            attachment(entry, name, root / destination, optional)
+        run(["ssh-keygen", "-l", "-f", root / "ssh-public"])
+        # Empty passphrase prevents a supplied encrypted key from hanging setup.
+        public = run(["ssh-keygen", "-y", "-P", "", "-f", root / "ssh-private"]).split()
+        if public[:2] != (root / "ssh-public").read_bytes().split()[:2]:
+            raise RuntimeError("SSH private/public key mismatch")
+        write(root / "identity.json", json.dumps(model))
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    finally:
+        for index in range(len(master)):
+            master[index] = 0
+
+
+def install_identity(target, root=SECRETS):
+    model = json.loads((root / "identity.json").read_text())
+    user = model["username"]
+
+    def chroot(*args, data=None):
+        return run(["chroot", target, *args], data)
+
+    if subprocess.run(["chroot", str(target), "id", user], capture_output=True).returncode:
+        chroot("useradd", "-m", "-s", "/bin/bash", "-c", model["full_name"], user)
+    for group in model["groups"].split(","):
+        if subprocess.run(["chroot", str(target), "getent", "group", group], capture_output=True).returncode == 0:
+            chroot("usermod", "-aG", group, user)
+    chroot("chpasswd", data=user.encode() + b":" + (root / "login").read_bytes() + b"\n")
+    uid = int(chroot("id", "-u", user))
+    gid = int(chroot("id", "-g", user))
+    home = target / "home" / user
+    for source, dest, mode in (("ssh-private", ".ssh/id_ed25519", 0o600), ("ssh-public", ".ssh/id_ed25519.pub", 0o644),
+                               ("ssh-public", ".ssh/authorized_keys", 0o600), ("ssh-config", ".ssh/config", 0o600),
+                               ("borg-key", ".ssh/borg_ed25519", 0o600), ("vorta-excludes", ".config/borg/vorta-excludes.txt", 0o600)):
+        if (root / source).is_file():
+            write(home / dest, (root / source).read_bytes(), mode)
+    os.chmod(home / ".ssh", 0o700)
+    write(home / ".config/workstation/setup.json", json.dumps(model, indent=2))
+    borg_env = "BORG_REPO=" + shlex.quote(model["borg_repository"]) + "\n"
+    if (root / "borg-key").exists():
+        borg_env += "BORG_RSH=" + shlex.quote(f"ssh -i /home/{user}/.ssh/borg_ed25519") + "\n"
+    write(home / ".config/borg/bootstrap.env", borg_env)
+    write(home / ".config/borg/VORTA-FIRST-LOGIN.txt",
+          f"Repository: {model['borg_repository']}\nProfile: {model['vorta_profile']}\nSources: {model['vorta_sources']}\nConfigure Vorta after login; keep the Borg passphrase in KDBX.\n")
+    vault = model["vault"].replace("$HOME", "~", 1)
+    vault = "" if vault == "~" else vault.removeprefix("~/")
+    (home / vault).mkdir(parents=True, exist_ok=True, mode=0o700)
+    for path in [home, *home.rglob("*")]:
+        if not path.is_symlink():
+            os.chown(path, uid, gid)
+    for field in ("name", "email"):
+        chroot("runuser", "-u", user, "--", "git", "config", "--global", f"user.{field}", model[f"git_{field}"])
+    write(target / "etc/hostname", model["hostname"] + "\n", 0o644)
+    hosts = target / "etc/hosts"
+    lines = [s for s in hosts.read_text().splitlines() if not s.startswith("127.0.1.1")]
+    write(hosts, "\n".join([*lines, f"127.0.1.1 {model['hostname']}", ""]), 0o644)
+    write(target / "etc/locale.gen", f"{model['locale']} UTF-8\n", 0o644)
+    write(target / "etc/default/locale", f"LANG={model['locale']}\n", 0o644)
+    (target / "etc/localtime").unlink(missing_ok=True)
+    (target / "etc/localtime").symlink_to("/usr/share/zoneinfo/" + model["timezone"])
+    write(target / "etc/timezone", model["timezone"] + "\n", 0o644)
+    chroot("locale-gen")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=("mount", "preflight", "identity", "cleanup"))
+    parser.add_argument("--target", type=Path, default=Path("/target"))
+    args = parser.parse_args()
+    if os.geteuid():
+        raise RuntimeError("Run as root")
+    if args.action == "mount":
+        mount_media()
+    elif args.action == "preflight":
+        database = mount_media()
+        if SECRETS.exists():
+            shutil.rmtree(SECRETS)
+        extract(database, SECRETS, console=True)
+        try:
+            firmware_mode(SECRETS)
+        except BaseException:
+            shutil.rmtree(SECRETS)
+            raise
+    elif args.action == "identity":
+        install_identity(args.target)
+    else:
+        shutil.rmtree(SECRETS, ignore_errors=True)
+        if subprocess.run(["mountpoint", "-q", str(MEDIA)]).returncode == 0:
+            run(["umount", MEDIA])
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (RuntimeError, ValueError, OSError) as error:
+        print(f"Workstation input failed: {error}", file=sys.stderr)
+        sys.exit(1)

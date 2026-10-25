@@ -16,7 +16,7 @@ elif [ "$fs_type" != btrfs ]; then
     echo "Encrypted volume is $fs_type, expected btrfs: $mapper" >&2
     exit 1
 fi
-efi_spec=$(awk '$2 == "/boot/efi" {print $1; exit}' "$fstab")
+efi_spec=$(awk '$2 == "/boot" {print $1; exit}' "$fstab")
 [ -n "$efi_spec" ] || { echo "No EFI entry in setup-storage fstab." >&2; exit 1; }
 
 top=/run/fai/btrfs-top
@@ -48,13 +48,13 @@ top_mounted=0
 trap - EXIT
 
 mount -o noatime,compress=zstd:3,subvol=@root "$mapper" "$target"
-mkdir -p "$target/home" "$target/.snapshots" "$target/boot/efi"
+mkdir -p "$target/home" "$target/.snapshots" "$target/boot"
 mount -o noatime,compress=zstd:3,subvol=@home "$mapper" "$target/home"
 mount -o noatime,compress=zstd:3,subvol=@snapshots "$mapper" "$target/.snapshots"
 efi_device=$(findfs "$efi_spec")
 [ -b "$efi_device" ] || { echo "EFI device not found: $efi_spec" >&2; exit 1; }
 [ "$(blkid -s TYPE -o value "$efi_device")" = vfat ] || { echo "EFI partition is not vfat: $efi_device" >&2; exit 1; }
-mount "$efi_device" "$target/boot/efi"
+mount -o umask=0077 "$efi_device" "$target/boot"
 
 root_uuid=$(blkid -s UUID -o value "$mapper")
 efi_uuid=$(blkid -s UUID -o value "$efi_device")
@@ -62,7 +62,7 @@ cat > "$LOGDIR/fstab" <<FSTAB
 UUID=$root_uuid /           btrfs noatime,compress=zstd:3,subvol=@root       0 0
 UUID=$root_uuid /home       btrfs noatime,compress=zstd:3,subvol=@home       0 0
 UUID=$root_uuid /.snapshots btrfs noatime,compress=zstd:3,subvol=@snapshots  0 0
-UUID=$efi_uuid  /boot/efi   vfat  umask=0077                                0 1
+UUID=$efi_uuid  /boot       vfat  umask=0077                                0 1
 FSTAB
 if [ -f "$LOGDIR/disk_var.sh" ]; then sed -i '/^ROOT_PARTITION=/d' "$LOGDIR/disk_var.sh"; fi
 printf 'ROOT_PARTITION=%q\n' "$mapper" >> "$LOGDIR/disk_var.sh"

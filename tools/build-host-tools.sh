@@ -9,8 +9,8 @@ YAZI_COMMIT_PREFIX=8dd895c695a5950330c2623eb43debf323b60654
 YAZI_RUST_VERSION=1.95.0
 RUSTUP_VERSION=1.29.2
 RUSTUP_INIT_SHA256=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4
-GRUB_BTRFS_VERSION=4.14
-GRUB_BTRFS_COMMIT_PREFIX=2fcfbe9
+SBCTL_VERSION=0.18
+SBCTL_COMMIT=6b8ed871565293283ed68a1de4810935145e749d
 mode=${1:-container}
 if [ "$mode" != --native ]; then
     runtime=$(command -v podman || command -v docker || true)
@@ -21,11 +21,10 @@ fi
 [ "$(uname -m)" = x86_64 ] || { echo "Host tool builds require an x86_64 host." >&2; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends build-essential ca-certificates curl git golang-go make pkg-config libssl-dev
+apt-get install -y --no-install-recommends build-essential ca-certificates curl git golang-go make pkg-config libssl-dev libpcsclite-dev
 out=$repo/fai/config/assets/bin
-vendor=$repo/fai/config/assets/vendor
-rm -rf "$out" "$vendor/grub-btrfs"
-mkdir -p "$out" "$vendor"
+rm -rf "$out"
+mkdir -p "$out"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 git clone --quiet --depth 1 --branch "v$CHEZMOI_VERSION" https://github.com/twpayne/chezmoi.git "$tmp/chezmoi"
 chezmoi_commit=$(git -C "$tmp/chezmoi" rev-parse HEAD)
@@ -59,10 +58,14 @@ chmod +x "$rustup_init"
 )
 install -m 0755 "$tmp/yazi/target/release/yazi" "$out/yazi"
 install -m 0755 "$tmp/yazi/target/release/ya" "$out/ya"
-git clone --quiet --depth 1 --branch "v$GRUB_BTRFS_VERSION" https://github.com/Antynea/grub-btrfs.git "$tmp/grub-btrfs"
-grub_btrfs_commit=$(git -C "$tmp/grub-btrfs" rev-parse HEAD)
-case $grub_btrfs_commit in "$GRUB_BTRFS_COMMIT_PREFIX"*) ;; *) echo "Unexpected grub-btrfs commit: $grub_btrfs_commit" >&2; exit 1;; esac
-rm -rf "$tmp/grub-btrfs/.git"
-cp -a "$tmp/grub-btrfs" "$vendor/grub-btrfs"
+git clone --quiet --depth 1 --branch "$SBCTL_VERSION" https://github.com/Foxboron/sbctl.git "$tmp/sbctl"
+[ "$(git -C "$tmp/sbctl" rev-parse HEAD)" = "$SBCTL_COMMIT" ] || { echo 'Unexpected sbctl commit' >&2; exit 1; }
+(
+    cd "$tmp/sbctl"
+    CGO_ENABLED=1 go build -trimpath -buildvcs=false \
+        -ldflags "-s -w -X github.com/foxboron/sbctl.Version=$SBCTL_VERSION" \
+        -o "$out/sbctl" ./cmd/sbctl
+)
+"$out/sbctl" version
 (cd "$repo" && sha256sum fai/config/assets/bin/* > fai/config/assets/HOST_TOOLS.sha256)
-printf 'chezmoi=%s\nyazi=%s\ngrub-btrfs=v%s@%s\n' "$CHEZMOI_VERSION" "$YAZI_VERSION" "$GRUB_BTRFS_VERSION" "$grub_btrfs_commit" > "$repo/fai/config/assets/HOST_TOOLS.versions"
+printf 'chezmoi=%s\nyazi=%s\nsbctl=%s@%s\n' "$CHEZMOI_VERSION" "$YAZI_VERSION" "$SBCTL_VERSION" "$SBCTL_COMMIT" > "$repo/fai/config/assets/HOST_TOOLS.versions"

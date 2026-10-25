@@ -20,6 +20,12 @@ linux-image-amd64
 parted
 python3
 python3-yaml
+keepassxc-minimal
+kbd
+dbus
+libpcsclite1
+openssl
+sbsigntool
 shim-signed
 systemd
 util-linux

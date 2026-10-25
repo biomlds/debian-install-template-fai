@@ -1,9 +1,17 @@
-# Backups and secret bootstrap
+# Backup and personal setup
 
-Borg, normally managed by Vorta, backs up all personal files: the KeePassXC database, SSH public/private material, documents, dotfiles, and local Cryptomator vault ciphertext. Cryptomator is cold local storage for sensitive, rarely accessed data; Borg still protects its encrypted vault folders. borgmatic is intentionally absent.
+FAI installs permanent SSH/Git identity and records KDBX setup metadata in
+`~/.config/workstation/setup.json`. Borg repository/key references are in
+`~/.config/borg/bootstrap.env`; Vorta setup instructions are in
+`~/.config/borg/VORTA-FIRST-LOGIN.txt`. Configure the Borg passphrase in Vorta
+after login; it is not stored by the installer.
 
-First boot records the Borg repository, optional Borg SSH key, and Cryptomator vault location. It does not collect or store the Borg or Cryptomator passphrases. Vorta imports the repository after graphical login and stores its normal state in the user's session/keyring; Cryptomator asks for its credential when the vault is opened.
+Back up personal files, the KDBX database, Cryptomator vault ciphertext, and any
+important Incus VM data. Test restores. Root snapshots share the disk and exclude
+home/ESP, so they do not replace Borg or external recovery media.
 
-There is an unavoidable bootstrap dependency: the Borg passphrase/key may be in KeePassXC, while the KeePassXC database may itself need restoring from Borg. Keep a separately encrypted/removable copy of the KeePassXC database, Borg repository location, Borg key/passphrase, Cryptomator credential, and LUKS recovery information. The first-boot database or YAML can be supplied from removable or separately restored media.
-
-Test restores regularly into a new directory. A successful backup job without a tested restore is not a verified backup.
+chezmoi is manual: inspect the scaffold at
+`/usr/local/share/workstation-bootstrap/chezmoi`, or initialize your own repository
+using the recorded Repository/Branch metadata. Review `chezmoi diff` before
+applying. Flatpak installation remains a separate retrying system timer, and
+project runtime setup remains inside Incus VMs.

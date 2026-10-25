@@ -1,25 +1,32 @@
-# Security model
+# Security boundary
 
-## Public policy
+Public Git, CI, ISO, archives, logs, and build artifacts contain policy/code only.
+KDBX, passwords/hashes, private keys, and populated per-install config are excluded.
+No GitHub secrets are required to build. The build scans both ISO contents and
+decompressed squashfs roots; repository scans include generic PKCS#8 key payloads.
 
-Git, CI, and the ISO contain classes, package names, scripts, schemas, pinned tool versions, and placeholder examples. They contain no permanent passwords, private keys, KeePassXC database, password hashes, bootstrap-media payloads, Borg secrets, or LUKS/GRUB credentials.
+The installer reads encrypted KDBX from root-owned mode-0600 ext4 removable media.
+The master is read without echo and supplied to KeePassXC on stdin. Private
+signing keys/LUKS input remain under root-only tmpfs; subprocess errors suppress
+captured secret-tool output. Intended SSH identity files persist inside LUKS;
+Secure Boot private keys and LUKS keyfiles do not. Cleanup cannot guarantee erasure
+of every RAM copy; power off untrusted installation sessions after use.
 
-## Temporary installation boundary
+Signed UKIs bind the kernel, initramfs and command line. Secure Boot does not
+authenticate all mutable Btrfs userspace or prevent an already privileged OS from
+tampering with snapshots/state. Protected means excluded from automatic cleanup,
+not immutable against root or disk damage. Use full-disk encryption, offline
+backups, and firmware access controls appropriate to your machine.
 
-`tools/prepare-bootstrap.sh` writes a password hash for `provision`, an optional public SSH key, and a temporary LUKS passphrase to an existing ext4 removable filesystem. It rejects symlinks on the media, writes through short-lived 0600 files renamed into place, labels the filesystem `FAI-BOOTSTRAP` only after successful validation, disables shell tracing, and never prints credentials. Attach this media only during installation and keep it offline afterward.
+Only a recovery entry that has actually booted and been explicitly confirmed is
+the pinned known-good baseline. A successful signature alone is not evidence of a
+working OS. Automated updates cannot create newly signed recovery UKIs without
+the offline key; they retain the existing tested baseline.
 
-The temporary LUKS passphrase is retained root-only inside the encrypted target solely so first boot can authorize safe rotation. Until rotation/finalization finishes, possession of that credential permits disk unlock. Treat an incomplete machine as unprovisioned.
+Security-only unattended upgrades defer boot-stack packages, never reboot, and
+create ordinary pre-transaction snapshots. Check service failures and deferred
+security fixes routinely. Run boot-stack upgrades through `workstation-update`.
 
-## Destructive disk selection
-
-The production installer has no unattended disk parameter. Before partitioning it filters block devices, distinguishes verified network boot from local live media, and requires a unique local installation-medium identity when booted from ISO/USB. Mounted devices—including the mounted bootstrap medium—cannot be targets. The selection is tied to model, serial, WWN, size, major/minor number, kernel path, and preferred stable ID, then re-read immediately before setup-storage.
-
-The confirmation phrase contains the selected stable-ID basename (`ERASE …`) when available, otherwise the selected kernel name; it is never a generic yes/no. EOF, cancellation, ambiguity, identity change, newly mounted children, or loss of the stable symlink fails closed. Split OS/bootloader disks are rejected.
-
-An automated override exists only for disposable VMs. It requires an exact conspicuous acknowledgement, an explicitly named disposable disk, and successful `systemd-detect-virt --vm`; it is not a production fallback.
-
-## First boot
-
-Secrets are not command arguments or log fields. Unavoidable transient secret files live under root-only `/run`, are overwritten on a best-effort basis, and are removed by cleanup. Source YAML and referenced files are rejected if group/world-readable unless an explicit recovery override is used. Debug modes are refused.
-
-The log records stage names and success/failure type only. The state journal contains no secret values.
+Read SECURE_BOOT.md for enrollment and VALIDATION.md for outstanding real-machine
+acceptance gates. No absolute always-boot guarantee covers hardware/firmware or
+shared-disk failure.

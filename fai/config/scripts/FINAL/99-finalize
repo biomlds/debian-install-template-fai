@@ -1,21 +1,37 @@
 #!/bin/bash
+set +x
 set -Eeuo pipefail
-fcopy -riM /etc/workstation-bootstrap
-fcopy -riM /etc/profile.d
+# shellcheck disable=SC1090
+source "${LOGDIR:-/tmp/fai}/disk-selection.env"
+# Restore real service/package commands before capturing the recovery root.
+fai-divert -R
+# FAI keeps the package database/cache in temporary mounts during configure.
+# Flush them BEFORE the baseline snapshot so recovery has a complete dpkg DB.
+mkramdisk -au
 fcopy -riM /etc/systemd/system
 fcopy -riM /usr/local/sbin
-fcopy -riM /usr/local/lib/workstation-firstboot
-chmod 0755 "$target/usr/local/sbin/"{workstation-firstboot,workstation-flatpaks,update-grub-secure,grub-security-check,incus-init-workstation,workstation-verify}
-chmod 0755 "$target/usr/local/lib/workstation-firstboot/workstation_firstboot.py"
-install -d -m 0700 "$target/var/lib/workstation-firstboot"
-install -d -m 0700 "$target/var/log/fai"
+chmod 0755 "$target/usr/local/sbin/"{workstation-*,incus-init-workstation}
+install -d -m 0700 "$target/var/log/fai" "$target/run/workstation-secrets"
 install -m 0600 "${LOGDIR:-/tmp/fai}/disk-selection.json" "$target/var/log/fai/disk-selection.json"
 install -m 0600 "${LOGDIR:-/tmp/fai}/disk-selection.log" "$target/var/log/fai/disk-selection.log"
-touch "$target/var/lib/workstation-firstboot/pending"
-chmod 0600 "$target/var/lib/workstation-firstboot/pending"
-$ROOTCMD update-initramfs -u -k all
-$ROOTCMD update-grub
+bound=0
+cleanup(){
+    if [ "$bound" = 1 ]; then umount "$target/run/workstation-secrets"; fi
+    rm -f "$target/run/workstation-install"
+    python3 "$FAI/assets/workstation/kdbx.py" cleanup
+}
+trap cleanup EXIT
+mount --bind /run/fai/workstation-secrets "$target/run/workstation-secrets"
+bound=1
+touch "$target/run/workstation-install"
+$ROOTCMD systemctl enable ssh.service workstation-flatpaks.timer workstation-uki-check.timer \
+    workstation-security-upgrade.timer
+$ROOTCMD systemctl enable fwupd-refresh.timer 2>/dev/null || true
+$ROOTCMD bootctl --esp-path=/boot --no-variables install
+# Register only the primary signed loader path; fallback is also signed below.
+$ROOTCMD workstation-secureboot install --secrets /run/workstation-secrets
+$ROOTCMD bootctl --esp-path=/boot --no-variables is-installed
+$ROOTCMD efibootmgr --create --disk "$FAI_SELECTED_BOOT_KERNEL" --part 1 \
+    --label 'Linux Boot Manager' --loader '\EFI\systemd\systemd-bootx64.efi'
 $ROOTCMD systemctl daemon-reload
-$ROOTCMD systemctl enable ssh.service
-$ROOTCMD systemctl enable workstation-flatpaks.timer
-$ROOTCMD systemctl enable fwupd-refresh.timer unattended-upgrades.service 2>/dev/null || true
+echo 'Installation signed. Boot a recovery entry and run: sudo workstation-secureboot confirm'

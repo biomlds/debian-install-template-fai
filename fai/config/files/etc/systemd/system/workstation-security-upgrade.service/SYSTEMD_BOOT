@@ -1,0 +1,11 @@
+[Unit]
+Description=Snapshot-protected Debian security updates
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/run/workstation-install
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/workstation-secureboot security
+TimeoutStartSec=2h
+UMask=0077

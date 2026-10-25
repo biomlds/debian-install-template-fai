@@ -8,6 +8,7 @@ permissions:
 jobs:
   iso:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     container:
       image: debian:trixie
       options: --privileged
@@ -20,6 +21,7 @@ jobs:
             btrfs-progs \
             ca-certificates \
             cryptsetup \
+            curl \
             dosfstools \
             fai-client \
             fai-server \
@@ -27,6 +29,10 @@ jobs:
             git \
             make \
             mtools \
+            grub-efi-amd64-bin \
+            grub-pc-bin \
+            isolinux \
+            syslinux-common \
             python3 \
             python3-yaml \
             rsync \
@@ -34,7 +40,7 @@ jobs:
             squashfs-tools \
             xorriso
       - name: Validate public policy
-        run: make validate
+        run: make validate manifest-check
       - name: Build pinned host tools in ephemeral runner
         run: ./tools/build-host-tools.sh --native
       - name: Build credential-free FAI ISO
@@ -43,7 +49,15 @@ jobs:
         run: |
           (cd build && sha256sum -c debian-fai-workstation.iso.sha256)
           sha256sum -c fai/config/assets/HOST_TOOLS.sha256
-          ! find . -type f -not -path './.git/*' -print0 | xargs -0 grep -IlE 'BEGIN (OPENSSH|RSA|EC|DSA) PRIVATE KEY'
+          python3 tools/scan-public.py fai/config
+      - name: Preserve FAI build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fai-build-logs-${{ github.run_id }}
+          path: /var/log/fai/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: debian-fai-workstation-${{ github.ref_name }}

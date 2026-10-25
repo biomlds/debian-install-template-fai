@@ -1,0 +1,7 @@
+#!/bin/bash
+set -eu
+# FAI invokes faiend on normal completion; also protect failed signing exits.
+if mountpoint -q "${target:-/target}/run/workstation-secrets"; then
+    umount "${target:-/target}/run/workstation-secrets"
+fi
+python3 "$FAI/assets/workstation/kdbx.py" cleanup

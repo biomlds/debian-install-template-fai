@@ -1,0 +1,6 @@
+[Unit]
+Description=Verify signed boot and recovery artifacts
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/workstation-secureboot check

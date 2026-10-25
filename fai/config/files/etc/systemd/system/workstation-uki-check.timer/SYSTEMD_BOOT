@@ -1,0 +1,10 @@
+[Unit]
+Description=Check boot protection on startup and daily
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1d
+Persistent=true
+
+[Install]
+WantedBy=timers.target
