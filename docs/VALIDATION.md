@@ -13,12 +13,18 @@ The cryptsetup test skips when cryptsetup is unavailable; CI installs it.
 No automated test writes a real block device.
 
 Current local results: shell syntax, ShellCheck, YAML/Python compilation, FAI
-disk syntax, 7 configuration-contract tests, 12 recovery/input tests, 12 mocked
+disk syntax, 7 configuration-contract tests, 15 recovery/input/scanner tests, 12 mocked
 disk-selector tests, and the regular-file Argon2id transition pass. The actual
 GitHub ISO build and the manual acceptance gates below are not yet verified.
 
 ISO workflow dispatch/tag builds pinned host tools (including sbctl), FAI NFSROOT,
-ISO/checksums, and scans extracted ISO plus squashfs contents. NFSROOT CLI smoke
+ISO/checksums, and scans extracted ISO plus nested filesystem contents. FAI 6.4
+may place `LiveOS/ext3fs.img` inside `squashfs.img`; the scanner detects both by
+filesystem magic, extracts squashfs and mounts ext read-only with journal replay
+disabled. It scans allocated files rather than raw filesystem/free-space bytes.
+Mount/extraction failures fail the build; mounts are removed even after a secret
+match. Diagnostics name the image, contained file and matching rule without
+printing secret contents. NFSROOT CLI smoke
 checks validate KeePassXC and sbctl runtime compatibility. Build logs are uploaded
 even when the workflow fails.
 

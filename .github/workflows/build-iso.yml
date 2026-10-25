@@ -23,6 +23,7 @@ jobs:
             cryptsetup \
             curl \
             dosfstools \
+            e2fsprogs \
             fai-client \
             fai-server \
             fai-setup-storage \
@@ -38,6 +39,7 @@ jobs:
             rsync \
             shellcheck \
             squashfs-tools \
+            util-linux \
             xorriso
       - name: Validate public policy
         run: make validate manifest-check

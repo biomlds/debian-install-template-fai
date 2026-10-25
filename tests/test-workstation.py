@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "fai/config/assets/workstation"))
@@ -138,6 +138,61 @@ class RecoveryTests(unittest.TestCase):
             (root / "hidden.dat").write_bytes(b"-----BEGIN " + b"PRIVATE KEY-----\n" + b"A" * 64)
             (root / "database.dat").write_bytes(bytes.fromhex("03d9a29a67fb4bb5") + b"payload")
             self.assertEqual(len(scanner.scan(root)), 2)
+
+    def scanner(self):
+        spec = importlib.util.spec_from_file_location("scanner", ROOT / "tools/scan-public.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_nested_fai_images_scan_files_not_raw_container_bytes(self):
+        scanner = self.scanner()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            iso, squash, filesystem = (base / name for name in ("iso", "squash", "filesystem"))
+            for path in (iso, squash / "LiveOS", filesystem / "etc"):
+                path.mkdir(parents=True)
+            (iso / "squashfs.img").write_bytes(b"hsqs" + b"\0" * 1100)
+            ext = squash / "LiveOS/ext3fs.img"
+            # A PEM payload in raw free space must not be mistaken for a file.
+            payload = b"-----BEGIN " + b"PRIVATE KEY-----\n" + b"A" * 64
+            ext.write_bytes(b"\0" * 1080 + b"\x53\xef" + payload)
+
+            @contextlib.contextmanager
+            def contents(path, kind):
+                yield squash if kind == "squashfs" else filesystem
+
+            with patch.object(scanner, "image_contents", side_effect=contents):
+                self.assertEqual(scanner.scan(iso, images=True), [])
+                (filesystem / "etc/credential.pem").write_bytes(payload)
+                errors = scanner.scan(iso, images=True)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("squashfs.img!/LiveOS/ext3fs.img!/etc/credential.pem", errors[0])
+            self.assertIn("private-key PEM payload", errors[0])
+
+    def test_ext_scan_mount_is_read_only_and_unmounted_on_scan_error(self):
+        scanner = self.scanner()
+        calls = []
+
+        def command(args, **kwargs):
+            calls.append(args)
+            return Mock(returncode=0)
+
+        with patch.object(scanner.subprocess, "run", side_effect=command):
+            with self.assertRaisesRegex(RuntimeError, "scan failed"):
+                with scanner.image_contents(Path("ext3fs.img"), "ext"):
+                    raise RuntimeError("scan failed")
+        self.assertEqual(calls[0][:4], ["mount", "-t", "ext4", "-o"])
+        self.assertIn("ro,noload,nosuid,nodev,noexec", calls[0][4])
+        self.assertEqual(calls[-1][0], "umount")
+        self.assertFalse(Path(calls[-1][1]).exists())
+
+    def test_image_mount_failure_fails_closed(self):
+        scanner = self.scanner()
+        with patch.object(scanner.subprocess, "run", return_value=Mock(returncode=1)):
+            with self.assertRaisesRegex(RuntimeError, "Cannot inspect ext filesystem"):
+                with scanner.image_contents(Path("ext3fs.img"), "ext"):
+                    self.fail("Failed mount must never be accepted as an empty scan")
 
 
 if __name__ == "__main__":

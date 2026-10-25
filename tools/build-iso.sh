@@ -36,10 +36,6 @@ fai-cd -M "$out"
 # Public ISO policy: no input values, private keys, password hashes, or bootstrap media payloads.
 scan=$(mktemp -d); trap 'rm -rf "$scan"' EXIT
 xorriso -osirrox on -indev "$out" -extract / "$scan/root" >/dev/null 2>&1
-python3 "$repo/tools/scan-public.py" "$scan/root"
-# Compressed roots must be inspected too; scanning squashfs bytes is insufficient.
-while IFS= read -r -d '' image; do
-    unpack=$(mktemp -d "$scan/squash.XXXXXX")
-    unsquashfs -no-progress -d "$unpack/root" "$image" >/dev/null
-    python3 "$repo/tools/scan-public.py" "$unpack/root"
-done < <(find "$scan/root" -type f \( -name '*.squashfs' -o -name 'squashfs.img' \) -print0)
+# FAI 6.4 can nest LiveOS/ext3fs.img inside squashfs.img. Inspect both layers
+# by filesystem magic, including direct-root squashfs layouts, and fail closed.
+python3 "$repo/tools/scan-public.py" --images "$scan/root"

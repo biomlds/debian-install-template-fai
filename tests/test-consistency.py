@@ -75,9 +75,8 @@ class Configuration(unittest.TestCase):
         self.assertNotRegex(workflow, r"\$\{\{\s*secrets\.")
         build = (ROOT / "tools/build-iso.sh").read_text()
         self.assertIn("/sbctl", build)
-        self.assertIn("unsquashfs", build)
+        self.assertIn('scan-public.py" --images', build)
         self.assertIn("chroot /srv/fai/nfsroot keepassxc-cli", build)
-        self.assertIn("-name 'squashfs.img'", build)
         self.assertIn("fai-make-nfsroot -v -f", build)
         self.assertIn("file:///var/lib/fai/config", (ROOT / "server/fai.conf.example").read_text())
 
