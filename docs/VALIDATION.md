@@ -13,7 +13,7 @@ The cryptsetup test skips when cryptsetup is unavailable; CI installs it.
 No automated test writes a real block device.
 
 Current local results: shell syntax, ShellCheck, YAML/Python compilation, FAI
-disk syntax, 7 configuration-contract tests, 15 recovery/input/scanner tests, 12 mocked
+disk syntax, 7 configuration-contract tests, 16 recovery/input/scanner tests, 12 mocked
 disk-selector tests, and the regular-file Argon2id transition pass. The actual
 GitHub ISO build and the manual acceptance gates below are not yet verified.
 
@@ -27,6 +27,13 @@ match. Diagnostics name the image, contained file and matching rule without
 printing secret contents. NFSROOT CLI smoke
 checks validate KeePassXC and sbctl runtime compatibility. Build logs are uploaded
 even when the workflow fails.
+
+GnuTLS embeds private-key fixtures for its upstream self-tests. The ISO scan
+permits only `usr/lib/x86_64-linux-gnu/libgnutls.so.30.*.*` with an exact SHA-256
+match to the original NFSROOT library, after verifying that library against its
+Debian dpkg package checksum. This uses the original package metadata because
+FAI strips dpkg info from the ISO runtime. Modified libraries and all other
+private-key files still fail; there is no blanket binary or directory exclusion.
 
 ## Release-blocking manual acceptance tests
 

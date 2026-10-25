@@ -2,6 +2,7 @@
 """Failure-oriented tests for recovery retention, publication and private input."""
 import importlib.util
 import contextlib
+import hashlib
 import json
 import os
 import sys
@@ -193,6 +194,29 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Cannot inspect ext filesystem"):
                 with scanner.image_contents(Path("ext3fs.img"), "ext"):
                     self.fail("Failed mount must never be accepted as an empty scan")
+
+    def test_only_checksum_verified_packaged_gnutls_is_exempt(self):
+        scanner = self.scanner()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            name = "usr/lib/x86_64-linux-gnu/libgnutls.so.30.40.3"
+            library = root / name
+            library.parent.mkdir(parents=True)
+            payload = b"-----BEGIN " + b"PRIVATE KEY-----\n" + b"A" * 64
+            library.write_bytes(b"\x7fELF\0" + payload)
+            info = root / "var/lib/dpkg/info"
+            info.mkdir(parents=True)
+            digest = hashlib.md5(library.read_bytes(), usedforsecurity=False).hexdigest()
+            (info / "libgnutls30t64:amd64.md5sums").write_text(f"{digest}  {name}\n")
+            allowed = scanner.debian_gnutls_allowlist(root)
+            self.assertEqual(scanner.scan(root, allowed=allowed), [])
+            # A different PEM file is never exempt, even with identical content.
+            (root / "credential.pem").write_bytes(library.read_bytes())
+            self.assertEqual(len(scanner.scan(root, allowed=allowed)), 1)
+            library.write_bytes(library.read_bytes() + b"modified")
+            self.assertEqual(len(scanner.scan(root, allowed=allowed)), 2)
+            with self.assertRaisesRegex(RuntimeError, "package checksum mismatch"):
+                scanner.debian_gnutls_allowlist(root)
 
 
 if __name__ == "__main__":

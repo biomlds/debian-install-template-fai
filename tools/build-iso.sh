@@ -38,4 +38,4 @@ scan=$(mktemp -d); trap 'rm -rf "$scan"' EXIT
 xorriso -osirrox on -indev "$out" -extract / "$scan/root" >/dev/null 2>&1
 # FAI 6.4 can nest LiveOS/ext3fs.img inside squashfs.img. Inspect both layers
 # by filesystem magic, including direct-root squashfs layouts, and fail closed.
-python3 "$repo/tools/scan-public.py" --images "$scan/root"
+python3 "$repo/tools/scan-public.py" --images --debian-root /srv/fai/nfsroot "$scan/root"
