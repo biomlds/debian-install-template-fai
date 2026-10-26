@@ -44,3 +44,13 @@ auto-entries yes
 auto-firmware yes
 LOADER
 # Defer bootctl install until FINAL so no package can replace signed artifacts.
+
+# Install recovery helper
+install -m 755 /usr/local/sbin/workstation-recover /target/usr/local/sbin/workstation-recover
+install -D -m 644 /usr/local/share/workstation/recovery/README.md /target/usr/local/share/workstation/recovery/README.md
+install -D -m 644 /etc/apt/apt.conf.d/70workstation-snapper/APT_PRE_INVOKE /target/etc/apt/apt.conf.d/70workstation-snapper/APT_PRE_INVOKE
+install -D -m 755 /usr/local/sbin/workstation-apt-pre-snapshot /target/usr/local/sbin/workstation-apt-pre-snapshot
+install -D -m 755 /usr/local/sbin/workstation-apt-post-snapshot /target/usr/local/sbin/workstation-apt-post-snapshot
+install -D -m 644 /etc/systemd/system/workstation-apt-snapshot.service.d/override.conf /target/etc/systemd/system/workstation-apt-snapshot.service.d/override.conf
+
+install -D -m 644 /etc/apt/apt.conf.d/71workstation-dpkg/DPKG_HOOK /target/etc/apt/apt.conf.d/71workstation-dpkg/DPKG_HOOK

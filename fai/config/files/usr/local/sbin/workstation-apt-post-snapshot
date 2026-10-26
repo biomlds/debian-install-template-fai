@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+[ -e /run/workstation-install ] && exit 0
+[ -n "${WORKSTATION_NO_SNAPSHOT:-}" ] && exit 0
+PARENT=$(ps -o comm= -p $PPID 2>/dev/null || true)
+case "$PARENT" in
+  workstation-update|unattended-upgrade) exit 0 ;;
+esac
+PRE=""
+if [ -r /run/workstation-apt-pre-number ]; then
+  PRE=$(cat /run/workstation-apt-pre-number)
+  rm -f /run/workstation-apt-pre-number
+fi
+if [ -n "${PRE:-}" ]; then
+  /usr/bin/snapper -c root create --type post --cleanup-algorithm number --pre-number "$PRE" --description "APT post-transaction" >/dev/null 2>&1 || \
+  /usr/bin/snapper -c root create --type single --cleanup-algorithm number --description "APT transaction" >/dev/null 2>&1 || true
+else
+  /usr/bin/snapper -c root create --type single --cleanup-algorithm number --description "APT transaction" >/dev/null 2>&1 || true
+fi
