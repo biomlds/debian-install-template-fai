@@ -162,22 +162,52 @@ def extract(database, root, *, identity=True, console=False):
     os.chmod(root, 0o700)
     master = bytearray()
     try:
-        if console:
-            with open("/dev/console", "r+") as terminal:
-                settings = termios.tcgetattr(terminal.fileno())
-                private = settings.copy()
-                private[3] &= ~termios.ECHO
-                try:
-                    termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
-                    terminal.write("KeePassXC master password: ")
-                    terminal.flush()
-                    master.extend(terminal.readline().rstrip("\r\n").encode())
-                finally:
-                    termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
-                    terminal.write("\n")
-                    terminal.flush()
+        if console or not hasattr(sys.stdin, 'seekable') or not sys.stdin.seekable():
+            terminal_path = "/dev/console"
+            if not os.path.exists(terminal_path):
+                terminal_path = "/dev/tty"
+            try:
+                with open(terminal_path, "r+") as terminal:
+                    settings = termios.tcgetattr(terminal.fileno())
+                    private = settings.copy()
+                    private[3] &= ~termios.ECHO
+                    try:
+                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
+                        terminal.write("KeePassXC master password: ")
+                        terminal.flush()
+                        line = terminal.readline()
+                        if not line:
+                            raise RuntimeError("No input from terminal")
+                        master.extend(line.rstrip("\r\n").encode())
+                    finally:
+                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
+                        terminal.write("\n")
+                        terminal.flush()
+            except (OSError, termios.error) as error:
+                raise RuntimeError(f"Cannot read master password from terminal: {error}") from None
         else:
-            master.extend(getpass.getpass("KeePassXC master password: ").encode())
+            try:
+                master.extend(getpass.getpass("KeePassXC master password: ").encode())
+            except (OSError, ValueError):
+                terminal_path = "/dev/console"
+                if not os.path.exists(terminal_path):
+                    terminal_path = "/dev/tty"
+                with open(terminal_path, "r+") as terminal:
+                    settings = termios.tcgetattr(terminal.fileno())
+                    private = settings.copy()
+                    private[3] &= ~termios.ECHO
+                    try:
+                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
+                        terminal.write("KeePassXC master password: ")
+                        terminal.flush()
+                        line = terminal.readline()
+                        if not line:
+                            raise RuntimeError("No input from terminal")
+                        master.extend(line.rstrip("\r\n").encode())
+                    finally:
+                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
+                        terminal.write("\n")
+                        terminal.flush()
         if not master:
             raise RuntimeError("Empty database master password")
 
