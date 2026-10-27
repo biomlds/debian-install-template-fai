@@ -162,52 +162,190 @@ def extract(database, root, *, identity=True, console=False):
     os.chmod(root, 0o700)
     master = bytearray()
     try:
-        if console or not hasattr(sys.stdin, 'seekable') or not sys.stdin.seekable():
-            terminal_path = "/dev/console"
-            if not os.path.exists(terminal_path):
-                terminal_path = "/dev/tty"
+        if console:
+            terminal_path = None
+            for candidate in ("/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"):
+                if os.path.exists(candidate):
+                    try:
+                        if os.stat(candidate).st_mode & 0o0020000:
+                            terminal_path = candidate
+                            break
+                    except OSError:
+                        continue
+            if terminal_path is None:
+                for candidate in ("/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"):
+                    if os.path.exists(candidate):
+                        terminal_path = candidate
+                        break
+            if terminal_path is None:
+                raise RuntimeError("No installer console available for password input")
+            fd = None
             try:
-                with open(terminal_path, "r+") as terminal:
-                    settings = termios.tcgetattr(terminal.fileno())
+                try:
+                    fd = os.open(terminal_path, os.O_RDWR | os.O_NOCTTY)
+                except OSError as error:
+                    raise RuntimeError(f"Cannot open installer console {terminal_path} for password input: {error}") from None
+                try:
+                    try:
+                        settings = termios.tcgetattr(fd)
+                    except termios.error as error:
+                        raise RuntimeError(f"Console {terminal_path} is not a TTY; cannot disable echo for password input: {error}") from None
                     private = settings.copy()
                     private[3] &= ~termios.ECHO
                     try:
-                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
-                        terminal.write("KeePassXC master password: ")
-                        terminal.flush()
-                        line = terminal.readline()
-                        if not line:
-                            raise RuntimeError("No input from terminal")
-                        master.extend(line.rstrip("\r\n").encode())
+                        try:
+                            termios.tcsetattr(fd, termios.TCSAFLUSH, private)
+                        except termios.error as error:
+                            raise RuntimeError(f"Failed to disable echo on console {terminal_path}: {error}") from None
+                        try:
+                            os.write(fd, b"KeePassXC master password: ")
+                        except OSError as error:
+                            raise RuntimeError(f"Failed to write prompt to console {terminal_path}: {error}") from None
+                        data = bytearray()
+                        while True:
+                            try:
+                                chunk = os.read(fd, 1)
+                            except OSError as error:
+                                raise RuntimeError(f"Failed to read from console {terminal_path}: {error}") from None
+                            if not chunk:
+                                break
+                            if chunk in (b"\n", b"\r"):
+                                break
+                            data.extend(chunk)
+                        if not data:
+                            raise RuntimeError("Empty password or no input from installer console")
+                        master.extend(bytes(data))
                     finally:
-                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
-                        terminal.write("\n")
-                        terminal.flush()
-            except (OSError, termios.error) as error:
-                raise RuntimeError(f"Cannot read master password from terminal: {error}") from None
+                        try:
+                            termios.tcsetattr(fd, termios.TCSAFLUSH, settings)
+                        except Exception:
+                            pass
+                        try:
+                            os.write(fd, b"\n")
+                        except Exception:
+                            pass
+                finally:
+                    if fd is not None:
+                        os.close(fd)
+                        fd = None
+            except RuntimeError:
+                raise
+            except Exception as error:
+                raise RuntimeError(f"Cannot read master password from installer console: {error}") from None
         else:
-            try:
-                master.extend(getpass.getpass("KeePassXC master password: ").encode())
-            except (OSError, ValueError):
-                terminal_path = "/dev/console"
-                if not os.path.exists(terminal_path):
-                    terminal_path = "/dev/tty"
-                with open(terminal_path, "r+") as terminal:
-                    settings = termios.tcgetattr(terminal.fileno())
-                    private = settings.copy()
-                    private[3] &= ~termios.ECHO
+            if not hasattr(sys.stdin, 'seekable') or not sys.stdin.seekable():
+                terminal_path = None
+                for candidate in ("/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"):
+                    if os.path.exists(candidate):
+                        try:
+                            if os.stat(candidate).st_mode & 0o0020000:
+                                terminal_path = candidate
+                                break
+                        except OSError:
+                            continue
+                if terminal_path is None:
+                    for candidate in ("/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"):
+                        if os.path.exists(candidate):
+                            terminal_path = candidate
+                            break
+                if terminal_path is None:
+                    raise RuntimeError("No console available for password input")
+                fd = None
+                try:
                     try:
-                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, private)
-                        terminal.write("KeePassXC master password: ")
-                        terminal.flush()
-                        line = terminal.readline()
-                        if not line:
-                            raise RuntimeError("No input from terminal")
-                        master.extend(line.rstrip("\r\n").encode())
+                        fd = os.open(terminal_path, os.O_RDWR | os.O_NOCTTY)
+                    except OSError as error:
+                        raise RuntimeError(f"Cannot open console {terminal_path}: {error}") from None
+                    try:
+                        try:
+                            settings = termios.tcgetattr(fd)
+                        except termios.error as error:
+                            raise RuntimeError(f"Console {terminal_path} is not a TTY: {error}") from None
+                        private = settings.copy()
+                        private[3] &= ~termios.ECHO
+                        try:
+                            termios.tcsetattr(fd, termios.TCSAFLUSH, private)
+                            os.write(fd, b"KeePassXC master password: ")
+                            data = bytearray()
+                            while True:
+                                try:
+                                    chunk = os.read(fd, 1)
+                                except OSError as error:
+                                    raise RuntimeError(f"Failed to read from console: {error}") from None
+                                if not chunk:
+                                    break
+                                if chunk in (b"\n", b"\r"):
+                                    break
+                                data.extend(chunk)
+                            if not data:
+                                raise RuntimeError("Empty password or no input from console")
+                            master.extend(bytes(data))
+                        finally:
+                            try:
+                                termios.tcsetattr(fd, termios.TCSAFLUSH, settings)
+                            except Exception:
+                                pass
+                            try:
+                                os.write(fd, b"\n")
+                            except Exception:
+                                pass
                     finally:
-                        termios.tcsetattr(terminal.fileno(), termios.TCSAFLUSH, settings)
-                        terminal.write("\n")
-                        terminal.flush()
+                        if fd is not None:
+                            os.close(fd)
+                            fd = None
+                except RuntimeError:
+                    raise
+                except Exception as error:
+                    raise RuntimeError(f"Cannot read master password from console: {error}") from None
+            else:
+                try:
+                    master.extend(getpass.getpass("KeePassXC master password: ").encode())
+                except Exception:
+                    terminal_path = None
+                    for candidate in ("/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"):
+                        if os.path.exists(candidate):
+                            terminal_path = candidate
+                            break
+                    if terminal_path is None:
+                        raise RuntimeError("No console available for password input")
+                    fd = None
+                    try:
+                        fd = os.open(terminal_path, os.O_RDWR | os.O_NOCTTY)
+                        try:
+                            settings = termios.tcgetattr(fd)
+                            private = settings.copy()
+                            private[3] &= ~termios.ECHO
+                            try:
+                                termios.tcsetattr(fd, termios.TCSAFLUSH, private)
+                                os.write(fd, b"KeePassXC master password: ")
+                                data = bytearray()
+                                while True:
+                                    chunk = os.read(fd, 1)
+                                    if not chunk:
+                                        break
+                                    if chunk in (b"\n", b"\r"):
+                                        break
+                                    data.extend(chunk)
+                                if not data:
+                                    raise RuntimeError("Empty password or no input from console")
+                                master.extend(bytes(data))
+                            finally:
+                                try:
+                                    termios.tcsetattr(fd, termios.TCSAFLUSH, settings)
+                                except Exception:
+                                    pass
+                                try:
+                                    os.write(fd, b"\n")
+                                except Exception:
+                                    pass
+                        finally:
+                            if fd is not None:
+                                os.close(fd)
+                                fd = None
+                    except RuntimeError:
+                        raise
+                    except Exception as error:
+                        raise RuntimeError(f"Cannot read master password from console: {error}") from None
         if not master:
             raise RuntimeError("Empty database master password")
 
