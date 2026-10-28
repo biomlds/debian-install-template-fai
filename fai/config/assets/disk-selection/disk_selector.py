@@ -16,6 +16,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -543,20 +544,80 @@ def active_console_path() -> str | None:
 
 
 def console_candidates(requested: str) -> list[str]:
-    candidates = [requested, "/dev/console"]
+    candidates = [requested, "/dev/console", "/dev/tty0", "/dev/tty1", "/dev/ttyS0", "/dev/tty"]
     active = active_console_path()
     if active:
         candidates.append(active)
-    candidates.append("/dev/tty")
     unique: list[str] = []
     for candidate in candidates:
-        if candidate and candidate not in unique:
-            unique.append(candidate)
+        if not candidate:
+            continue
+        if candidate in unique:
+            continue
+        unique.append(candidate)
     return unique
 
 
-def open_console(path: str) -> TextIO:
-    return Path(path).open("r+", buffering=1)
+class ConsoleIO:
+    def __init__(self, path: str):
+        self.path = path
+        self.fd = None
+        self.old_settings = None
+
+    def __enter__(self):
+        try:
+            self.fd = os.open(self.path, os.O_RDWR | os.O_NOCTTY)
+        except OSError as exc:
+            raise OSError(f"{exc.strerror or exc}") from exc
+        try:
+            self.old_settings = termios.tcgetattr(self.fd)
+        except termios.error:
+            self.old_settings = None
+        return self
+
+    def write(self, data: str) -> int:
+        if self.fd is None:
+            raise OSError("Console not open")
+        try:
+            return os.write(self.fd, data.encode())
+        except OSError:
+            raise
+
+    def flush(self) -> None:
+        return None
+
+    def readline(self) -> str:
+        if self.fd is None:
+            raise OSError("Console not open")
+        data = bytearray()
+        while True:
+            try:
+                chunk = os.read(self.fd, 1)
+            except OSError as exc:
+                raise OSError(f"{exc.strerror or exc}") from exc
+            if not chunk:
+                break
+            if chunk in (b"\n", b"\r"):
+                break
+            data.extend(chunk)
+        return data.decode(errors="replace")
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.fd is not None:
+            if self.old_settings is not None:
+                try:
+                    termios.tcsetattr(self.fd, termios.TCSAFLUSH, self.old_settings)
+                except Exception:
+                    pass
+            try:
+                os.close(self.fd)
+            except Exception:
+                pass
+            self.fd = None
+
+
+def open_console(path: str) -> ConsoleIO:
+    return ConsoleIO(path)
 
 
 def run_selection(
