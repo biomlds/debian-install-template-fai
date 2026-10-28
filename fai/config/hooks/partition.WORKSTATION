@@ -38,10 +38,17 @@ python3 "$FAI/assets/workstation/kdbx.py" preflight
 
 # shellcheck disable=SC1090
 source "$selection_env"
-disklist=$(echo "${disklist:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
-BOOT_DEVICE=$(echo "${BOOT_DEVICE:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
-PHYSICAL_BOOT_DEVICES=$(echo "${PHYSICAL_BOOT_DEVICES:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
-FAI_SELECTED_BOOT_KERNEL=$(echo "${FAI_SELECTED_BOOT_KERNEL:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+# setup-storage's disklist/-D contract uses bare kernel names (sdb, nvme0n1),
+# while bootloader variables intentionally retain absolute /dev paths.
+# Accept one legacy /dev/ prefix defensively, then fail closed on any path.
+disklist=${disklist#/dev/}
+case "$disklist" in
+    ""|*/*) echo "Invalid setup-storage disk name: $disklist" >&2; exit 1 ;;
+esac
+case "${BOOT_DEVICE:-}:${PHYSICAL_BOOT_DEVICES:-}:${FAI_SELECTED_BOOT_KERNEL:-}" in
+    /dev/*:/dev/*:/dev/*) ;;
+    *) echo "Invalid selected boot-device path." >&2; exit 1 ;;
+esac
 export disklist BOOT_DEVICE PHYSICAL_BOOT_DEVICES FAI_SELECTED_BOOT_KERNEL
 
 setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"

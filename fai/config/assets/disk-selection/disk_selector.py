@@ -438,6 +438,17 @@ def normalize_dev_path(path: str) -> str:
     return path
 
 
+def setup_storage_disk_name(disk: dict[str, Any]) -> str:
+    """Return the bare kernel name required by setup-storage's disklist/-D."""
+    name = str(disk.get("kname") or "").strip()
+    if not name:
+        path = normalize_dev_path(str(disk.get("kernel_path") or ""))
+        name = path.removeprefix("/dev/")
+    if not name or "/" in name or name in {".", ".."}:
+        fail("Selected OS disk has an invalid setup-storage device name.")
+    return name
+
+
 def write_record(record: dict[str, Any], json_path: Path, env_path: Path) -> None:
     record = dict(record)
     os_disk = dict(record.get("os_disk", {}))
@@ -457,7 +468,9 @@ def write_record(record: dict[str, Any], json_path: Path, env_path: Path) -> Non
         "FAI_SELECTED_BOOT_STABLE": boot_disk["stable_path"],
         "FAI_SELECTED_BOOT_KERNEL": boot_disk["kernel_path"],
         "FAI_SELECTED_BOOT_IDENTITY": boot_disk["identity"],
-        "disklist": os_disk["kernel_path"],
+        # setup-storage prepends /dev/ when resolving disk1. Passing /dev/sdb
+        # here would therefore produce the invalid partition /dev/dev/sdb2.
+        "disklist": setup_storage_disk_name(os_disk),
         "BOOT_DEVICE": boot_disk["kernel_path"],
         "PHYSICAL_BOOT_DEVICES": boot_disk["kernel_path"],
     }

@@ -144,6 +144,33 @@ def test_record_is_tied_to_identity() -> None:
     assert not record["test_only_override"]
 
 
+def test_setup_storage_env_uses_bare_disk_name() -> None:
+    data = fixture("disks-network.json")
+    mode, media, disks, _ = selector.eligible_disks(
+        data["lsblk"], data["mounts"], data["cmdline"], data["by_id"]
+    )
+    record = selector.selection_record(disks[0], disks[0], mode, media, False)
+    with tempfile.TemporaryDirectory() as directory:
+        json_path = Path(directory) / "selection.json"
+        env_path = Path(directory) / "selection.env"
+        selector.write_record(record, json_path, env_path)
+        env = env_path.read_text().splitlines()
+    assert "export disklist=vda" in env
+    assert "export BOOT_DEVICE=/dev/vda" in env
+    assert "export PHYSICAL_BOOT_DEVICES=/dev/vda" in env
+    assert all("/dev/dev/" not in line for line in env)
+
+
+def test_setup_storage_name_normalizes_legacy_dev_prefix() -> None:
+    assert selector.setup_storage_disk_name({"kernel_path": "/dev/dev/sdb"}) == "sdb"
+    try:
+        selector.setup_storage_disk_name({"kernel_path": "/dev/disk/by-id/example"})
+    except selector.SelectionError:
+        pass
+    else:
+        raise AssertionError("setup-storage accepted a path instead of a bare disk name")
+
+
 def test_console_candidates_include_fallbacks() -> None:
     candidates = selector.console_candidates("/dev/console")
     assert candidates[0] == "/dev/console"

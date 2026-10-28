@@ -35,6 +35,9 @@ class Configuration(unittest.TestCase):
         disk = self.text("disk_config/LUKS_BTRFS")
         self.assertRegex(disk, r"p=efi\s+/boot\s+2G\s+vfat")
         self.assertIn("--pbkdf=argon2id", disk)
+        hook = self.text("hooks/partition.WORKSTATION")
+        self.assertIn('disklist=${disklist#/dev/}', hook)
+        self.assertIn('setup-storage -X -f "$config" -D "$disklist"', hook)
         mount = self.text("hooks/mountdisks.LUKS_BTRFS")
         for name in ("@root", "@home", "@snapshots"):
             self.assertIn(name, mount)

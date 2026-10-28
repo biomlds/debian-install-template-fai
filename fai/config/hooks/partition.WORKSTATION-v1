@@ -1,0 +1,56 @@
+#!/bin/bash
+set -Eeuo pipefail
+umask 077
+: "${FAI:?FAI config-space path is required}"
+: "${LOGDIR:=/tmp/fai}"
+selector=$FAI/assets/disk-selection/disk_selector.py
+selection=$LOGDIR/disk-selection.json
+selection_env=$LOGDIR/disk-selection.env
+config=$FAI/disk_config/LUKS_BTRFS
+
+[ -x "$selector" ] || { echo "Disk selector is missing or not executable: $selector" >&2; exit 1; }
+[ -r "$config" ] || { echo "Disk configuration is missing: $config" >&2; exit 1; }
+install -d -m 0700 "$LOGDIR"
+# Mark the standard task skipped even if our preflight fails. With STOP_ON_ERROR=0
+# FAI aborts, but this also prevents default partitioning in a permissive session.
+touch "$LOGDIR/skip.partition"
+cleanup_failed_preflight(){
+    status=$?
+    if [ "$status" -ne 0 ]; then python3 "$FAI/assets/workstation/kdbx.py" cleanup || true; fi
+}
+trap cleanup_failed_preflight EXIT
+
+# Never permit a failed class script to fall through to destructive selection.
+if [ "$(uname -m)" != x86_64 ] || [ ! -d /sys/firmware/efi ]; then
+    echo "amd64 UEFI is required." >&2; exit 1;
+fi
+python3 "$FAI/assets/workstation/kdbx.py" preflight
+
+# This hook replaces FAI's standard partition task so selection can happen before
+# setup-storage. It fails closed on missing TTY, cancellation, EOF, or any check.
+"$selector" select --tty /dev/console --output "$selection" --env-output "$selection_env" \
+    2>&1 | tee "$LOGDIR/disk-selection.log"
+
+# The selector already revalidates once after persistence. Repeat it as the last
+# operation before setup-storage to minimize the selection-to-destruction race.
+"$selector" revalidate --selection "$selection" \
+    2>&1 | tee -a "$LOGDIR/disk-selection.log"
+
+# shellcheck disable=SC1090
+source "$selection_env"
+disklist=$(echo "${disklist:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+BOOT_DEVICE=$(echo "${BOOT_DEVICE:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+PHYSICAL_BOOT_DEVICES=$(echo "${PHYSICAL_BOOT_DEVICES:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+FAI_SELECTED_BOOT_KERNEL=$(echo "${FAI_SELECTED_BOOT_KERNEL:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+export disklist BOOT_DEVICE PHYSICAL_BOOT_DEVICES FAI_SELECTED_BOOT_KERNEL
+
+setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"
+[ -s "$LOGDIR/disk_var.sh" ] || { echo "setup-storage did not create disk_var.sh" >&2; exit 1; }
+
+# setup-storage derives these values from disk1; make the independently selected
+# bootloader target explicit for every later script. Split disks are rejected.
+sed -i '/^BOOT_DEVICE=/d;/^PHYSICAL_BOOT_DEVICES=/d' "$LOGDIR/disk_var.sh"
+printf 'BOOT_DEVICE=%q\nPHYSICAL_BOOT_DEVICES=%q\n' \
+    "$FAI_SELECTED_BOOT_KERNEL" "$FAI_SELECTED_BOOT_KERNEL" >> "$LOGDIR/disk_var.sh"
+# The standard task must source these variables into FAI's parent shell.
+rm -f "$LOGDIR/skip.partition"
