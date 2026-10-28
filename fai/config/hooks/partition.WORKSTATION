@@ -38,7 +38,11 @@ python3 "$FAI/assets/workstation/kdbx.py" preflight
 
 # shellcheck disable=SC1090
 source "$selection_env"
-export disklist BOOT_DEVICE PHYSICAL_BOOT_DEVICES
+disklist=$(echo "${disklist:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+BOOT_DEVICE=$(echo "${BOOT_DEVICE:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+PHYSICAL_BOOT_DEVICES=$(echo "${PHYSICAL_BOOT_DEVICES:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+FAI_SELECTED_BOOT_KERNEL=$(echo "${FAI_SELECTED_BOOT_KERNEL:-}" | sed -E 's#^/+dev/+dev/#/dev/#g; s#^/dev//+#/dev/#g')
+export disklist BOOT_DEVICE PHYSICAL_BOOT_DEVICES FAI_SELECTED_BOOT_KERNEL
 
 setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"
 [ -s "$LOGDIR/disk_var.sh" ] || { echo "setup-storage did not create disk_var.sh" >&2; exit 1; }
