@@ -427,10 +427,29 @@ def atomic_write(path: Path, data: str, mode: int = 0o600) -> None:
             pass
 
 
+def normalize_dev_path(path: str) -> str:
+    if not path:
+        return path
+    path = str(path)
+    path = re.sub(r'^/+dev/+dev/', '/dev/', path)
+    path = re.sub(r'^/dev//+', '/dev/', path)
+    if path.startswith('/dev/') and '//' in path:
+        path = path.replace('//', '/')
+    return path
+
+
 def write_record(record: dict[str, Any], json_path: Path, env_path: Path) -> None:
+    record = dict(record)
+    os_disk = dict(record.get("os_disk", {}))
+    boot_disk = dict(record.get("boot_disk", {}))
+    for disk in (os_disk, boot_disk):
+        if "kernel_path" in disk:
+            disk["kernel_path"] = normalize_dev_path(disk["kernel_path"])
+        if "stable_path" in disk and disk["stable_path"].startswith("/dev/"):
+            disk["stable_path"] = normalize_dev_path(disk["stable_path"])
+    record["os_disk"] = os_disk
+    record["boot_disk"] = boot_disk
     atomic_write(json_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
-    os_disk = record["os_disk"]
-    boot_disk = record["boot_disk"]
     values = {
         "FAI_SELECTED_OS_STABLE": os_disk["stable_path"],
         "FAI_SELECTED_OS_KERNEL": os_disk["kernel_path"],
@@ -442,7 +461,7 @@ def write_record(record: dict[str, Any], json_path: Path, env_path: Path) -> Non
         "BOOT_DEVICE": boot_disk["kernel_path"],
         "PHYSICAL_BOOT_DEVICES": boot_disk["kernel_path"],
     }
-    atomic_write(env_path, "".join(f"export {key}={shlex.quote(value)}\n" for key, value in values.items()))
+    atomic_write(env_path, "".join(f"export {key}={shlex.quote(normalize_dev_path(value) if isinstance(value, str) else value)}\n" for key, value in values.items()))
 
 
 def test_override(cmdline: str, disks: list[Disk]) -> Disk | None:
