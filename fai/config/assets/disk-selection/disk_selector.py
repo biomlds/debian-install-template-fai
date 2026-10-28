@@ -507,30 +507,95 @@ def load_record(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise SelectionError("Cannot load persisted disk selection.") from exc
+        raise SelectionError(
+            "Cannot load persisted disk selection."
+        ) from exc
+
     if not isinstance(data, dict) or data.get("schema") != SCHEMA:
         fail("Unsupported disk-selection schema.")
+
     if data.get("boot_source") not in {"local", "network"}:
         fail("Persisted disk selection has an invalid boot source.")
+
     if not isinstance(data.get("test_only_override"), bool):
         fail("Persisted disk selection has an invalid test override flag.")
+
     media = data.get("installation_media")
-    if not isinstance(media, list) or not all(isinstance(item, str) for item in media):
+    if (
+        not isinstance(media, list)
+        or not all(isinstance(item, str) for item in media)
+    ):
         fail("Persisted disk selection has invalid installation media.")
+
+    required_strings = (
+        "kernel_path",
+        "stable_path",
+        "kname",
+        "maj_min",
+        "identity",
+    )
+
+    optional_strings = (
+        "model",
+        "serial",
+        "wwn",
+        "transport",
+    )
+
     for name in ("os_disk", "boot_disk"):
         disk = data.get(name)
+
         if not isinstance(disk, dict):
             fail(f"Persisted disk selection is missing {name}.")
-        for key in ("kernel_path", "stable_path", "kname", "maj_min", "model", "serial", "wwn", "transport", "identity"):
-            if not isinstance(disk.get(key), str) or not disk[key]:
-                fail(f"Persisted disk selection has an invalid {name}.{key}.")
-        if not isinstance(disk.get("size"), int) or isinstance(disk["size"], bool) or disk["size"] <= 0:
-            fail(f"Persisted disk selection has an invalid {name}.size.")
-        if not isinstance(disk.get("removable"), bool) or not isinstance(disk.get("rotational"), bool):
-            fail(f"Persisted disk selection has invalid {name} device flags.")
+
+        for key in required_strings:
+            value = disk.get(key)
+            if not isinstance(value, str) or not value:
+                fail(
+                    f"Persisted disk selection has an invalid "
+                    f"{name}.{key}."
+                )
+
+        for key in optional_strings:
+            value = disk.get(key)
+            if not isinstance(value, str):
+                fail(
+                    f"Persisted disk selection has an invalid "
+                    f"{name}.{key}."
+                )
+
+        if (
+            not isinstance(disk.get("size"), int)
+            or isinstance(disk["size"], bool)
+            or disk["size"] <= 0
+        ):
+            fail(
+                f"Persisted disk selection has an invalid "
+                f"{name}.size."
+            )
+
+        if not isinstance(disk.get("removable"), bool):
+            fail(
+                f"Persisted disk selection has an invalid "
+                f"{name}.removable."
+            )
+
+        if not isinstance(disk.get("rotational"), bool):
+            fail(
+                f"Persisted disk selection has an invalid "
+                f"{name}.rotational."
+            )
+
         summary = disk.get("summary")
-        if not isinstance(summary, list) or not all(isinstance(row, str) for row in summary):
-            fail(f"Persisted disk selection has an invalid {name}.summary.")
+        if (
+            not isinstance(summary, list)
+            or not all(isinstance(row, str) for row in summary)
+        ):
+            fail(
+                f"Persisted disk selection has an invalid "
+                f"{name}.summary."
+            )
+
     return data
 
 
