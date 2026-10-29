@@ -74,6 +74,26 @@ class Configuration(unittest.TestCase):
         self.assertFalse(any(re.search(pattern, "systemd") for pattern in patterns))
         self.assertIn('Automatic-Reboot "false"', policy)
 
+    def test_apt_snapshot_hook_and_recovery_helper_layout(self):
+        for path in (
+            "files/usr/local/sbin/workstation-recover/SYSTEMD_BOOT",
+            "files/usr/local/sbin/workstation-apt-snapshot/SYSTEMD_BOOT",
+            "files/etc/apt/apt.conf.d/70workstation-hooks/SYSTEMD_BOOT",
+            "files/usr/local/share/workstation/recovery/README.md/SYSTEMD_BOOT",
+        ):
+            self.assertTrue((CFG / path).is_file(), path)
+        setup = self.text("scripts/SYSTEMD_BOOT/10-setup")
+        self.assertIn("fcopy -riM /usr/local/sbin", setup)
+        self.assertIn("fcopy -riM /usr/local/share/workstation", setup)
+        self.assertNotIn("install -m 755 /usr/local/sbin/workstation-recover", setup)
+        self.assertNotIn("apt-snapshot.service", setup)
+        hook = self.text("files/usr/local/sbin/workstation-apt-snapshot/SYSTEMD_BOOT")
+        self.assertIn("/run/workstation-maintenance.lock", hook)
+        self.assertIn("flock -n 9", hook)
+        apt = self.text("files/etc/apt/apt.conf.d/70workstation-hooks/SYSTEMD_BOOT")
+        self.assertEqual(apt.count("DPkg::Pre-Invoke"), 1)
+        self.assertNotIn("Post-Invoke", apt)
+
     def test_vm_and_flatpak_retained(self):
         incus = self.text("assets/incus/scripts/create.sh")
         self.assertIn(" --vm ", incus)

@@ -1,2 +1,0 @@
-DPkg::Pre-Invoke { "/usr/local/sbin/workstation-apt-pre-snapshot"; };
-DPkg::Post-Invoke { "/usr/local/sbin/workstation-apt-post-snapshot"; };
