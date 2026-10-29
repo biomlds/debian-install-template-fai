@@ -1,14 +1,14 @@
 #!/bin/bash
-set -euo pipefail
-# Snapshot before any unmanaged APT/dpkg transaction. Managed maintenance
-# (workstation-update, workstation-security-upgrade.service) holds this lock
-# and creates its own protected, bootable snapshot first.
-[ -e /etc/snapper/configs/root ] || exit 0
+# Fail open: an advisory snapshot must never break an APT/dpkg transaction.
+set +e
 [ -x /usr/bin/snapper ] || exit 0
+[ -e /etc/snapper/configs/root ] || exit 0
 [ -e /run/workstation-install ] && exit 0
-exec 9>/run/workstation-maintenance.lock
+# Managed maintenance (workstation-update, workstation-security-upgrade.service)
+# holds this lock and creates its own protected, bootable snapshot first.
+exec 9>/run/workstation-maintenance.lock 2>/dev/null || exit 0
 flock -n 9 || exit 0
 /usr/bin/snapper -c root create --type single --cleanup-algorithm number \
     --description "APT/dpkg transaction $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    >/dev/null 2>&1 || true
+    >/dev/null 2>&1
 exit 0

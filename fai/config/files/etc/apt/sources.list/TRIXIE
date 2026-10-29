@@ -1,0 +1,3 @@
+# Debian repositories are configured in /etc/apt/sources.list.d/debian.sources.
+# This file intentionally overrides the debootstrap sources.list before
+# task_repository/instsoft so the same repository is not configured twice.

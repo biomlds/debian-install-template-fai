@@ -51,6 +51,7 @@ required = [
     "files/usr/local/sbin/workstation-recover/SYSTEMD_BOOT",
     "files/usr/local/sbin/workstation-apt-snapshot/SYSTEMD_BOOT",
     "files/etc/apt/apt.conf.d/70workstation-hooks/SYSTEMD_BOOT",
+    "files/etc/apt/sources.list/TRIXIE",
     "files/usr/local/share/workstation/recovery/README.md/SYSTEMD_BOOT",
     "assets/disk-selection/disk_selector.py",
 ]

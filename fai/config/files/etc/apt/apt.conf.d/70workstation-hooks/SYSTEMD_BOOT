@@ -1,1 +1,4 @@
-DPkg::Pre-Invoke { "/usr/local/sbin/workstation-apt-snapshot"; };
+// The helper is installed during the configure stage, after task_repository has
+// already copied this file into the target. Guard the call so package
+// installation in the instsoft stage can never fail on a missing hook.
+DPkg::Pre-Invoke { "if [ -x /usr/local/sbin/workstation-apt-snapshot ]; then /usr/local/sbin/workstation-apt-snapshot; fi"; };

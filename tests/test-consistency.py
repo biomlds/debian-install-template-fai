@@ -90,9 +90,21 @@ class Configuration(unittest.TestCase):
         hook = self.text("files/usr/local/sbin/workstation-apt-snapshot/SYSTEMD_BOOT")
         self.assertIn("/run/workstation-maintenance.lock", hook)
         self.assertIn("flock -n 9", hook)
+        self.assertIn("set +e", hook)
+        self.assertNotIn("set -e", hook.replace("set +e", ""))
         apt = self.text("files/etc/apt/apt.conf.d/70workstation-hooks/SYSTEMD_BOOT")
         self.assertEqual(apt.count("DPkg::Pre-Invoke"), 1)
         self.assertNotIn("Post-Invoke", apt)
+        # task_repository copies /etc/apt before instsoft, while the helper is
+        # only installed at configure time; the call must no-op when missing.
+        self.assertIn("-x /usr/local/sbin/workstation-apt-snapshot", apt)
+        self.assertIn("then /usr/local/sbin/workstation-apt-snapshot", apt)
+
+    def test_stub_sources_list_prevents_duplicates(self):
+        stub = self.text("files/etc/apt/sources.list/TRIXIE")
+        self.assertFalse(any(re.match(r"\s*(deb|Types:)", line) for line in stub.splitlines()))
+        sources = self.text("files/etc/apt/sources.list.d/debian.sources/TRIXIE")
+        self.assertIn("URIs: https://deb.debian.org/debian", sources)
 
     def test_vm_and_flatpak_retained(self):
         incus = self.text("assets/incus/scripts/create.sh")
