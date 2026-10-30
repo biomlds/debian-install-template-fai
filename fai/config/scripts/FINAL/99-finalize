@@ -7,7 +7,7 @@ source "${LOGDIR:-/tmp/fai}/disk-selection.env"
 fai-divert -R
 # FAI keeps the package database/cache in temporary mounts during configure.
 # Flush them BEFORE the baseline snapshot so recovery has a complete dpkg DB.
-mkramdisk -au
+mkramdisk -au || { echo "Failed to flush package ramdisks before the baseline snapshot." >&2; exit 1; }
 fcopy -riM /etc/systemd/system
 fcopy -riM /usr/local/sbin
 chmod 0755 "$target/usr/local/sbin/"{workstation-*,incus-init-workstation}
@@ -21,7 +21,9 @@ cleanup(){
     python3 "$FAI/assets/workstation/kdbx.py" cleanup
 }
 trap cleanup EXIT
-mount --bind /run/fai/workstation-secrets "$target/run/workstation-secrets"
+mount --bind /run/fai/workstation-secrets "$target/run/workstation-secrets" || {
+    echo "Failed to bind installer secrets into the target." >&2; exit 1;
+}
 bound=1
 touch "$target/run/workstation-install"
 $ROOTCMD systemctl enable ssh.service workstation-flatpaks.timer workstation-uki-check.timer \

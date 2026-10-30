@@ -15,6 +15,16 @@ partition_workstation() {
     selection_env=$LOGDIR/disk-selection.env
     config=$FAI/disk_config/LUKS_BTRFS
     install -d -m 0700 "$LOGDIR"
+    : "${target:=/target}"
+
+    # A previous aborted run leaves /target (and its subvolumes) mounted. A new
+    # setup-storage then regenerates the LUKS key while the old mapper stays
+    # open, so no key unlocks and findmnt/lsblk see inconsistent state. Require
+    # a fresh boot instead of installing over stale mounts.
+    if mountpoint -q "$target" || mountpoint -q "$target/boot"; then
+        echo "Target is already mounted from an earlier attempt. Reboot the installer before retrying." >&2
+        exit 1
+    fi
 
     # Even though the sourced hook stops FAI explicitly, keep the task suppressed
     # and leave a marker so class/20-bootstrap can reset state after an abort.
@@ -89,10 +99,19 @@ partition_workstation() {
     [ -s "$LOGDIR/disk_var.sh" ] || { echo "setup-storage did not create disk_var.sh" >&2; exit 1; }
 
     # 10-luks-key rewrites crypttab to its final "none" form, so a retried or
-    # re-run configure would lose setup-storage's temporary key path. Persist it.
-    awk 'NR==1 {print $3}' "$LOGDIR/crypttab" > "$LOGDIR/luks-setup-key"
-    chmod 0600 "$LOGDIR/luks-setup-key"
-    [ -s "$LOGDIR/luks-setup-key" ] || { echo "setup-storage did not create a LUKS key file." >&2; exit 1; }
+    # re-run configure would lose setup-storage's temporary key path. Copy the
+    # key BYTES; storing the path text here makes cryptsetup use that text as
+    # the passphrase and no slot ever unlocks.
+    setup_key_path=$(awk 'NR==1 {print $3}' "$LOGDIR/crypttab")
+    if [ -z "$setup_key_path" ] || [ "$setup_key_path" = "none" ]; then
+        echo "crypttab does not reference a setup-storage LUKS key." >&2
+        exit 1
+    fi
+    [ -s "$setup_key_path" ] || {
+        echo "setup-storage LUKS key file is missing: $setup_key_path" >&2
+        exit 1
+    }
+    install -m 0600 "$setup_key_path" "$LOGDIR/luks-setup-key"
 
     # setup-storage derives these values from disk1; make the independently selected
     # bootloader target explicit for every later script. Split disks are rejected.

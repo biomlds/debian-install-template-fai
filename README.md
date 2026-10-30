@@ -112,6 +112,9 @@ so installation needs network access to the configured Debian repositories.
    run **before disk selection and partitioning**. Select the same disk for OS
    and bootloader, then type `ERASE <identifier>` exactly.
    **The selected disk will be erased.**
+   If an attempt fails after partitioning, **reboot the installer before retrying**.
+   FAI leaves `/target` mounted and a second run would regenerate the LUKS key
+   while the old mapper stays open; the hook now refuses that state.
 5. FAI installs the permanent account, replaces the temporary setup-storage LUKS
    slot with the permanent Argon2id credential, signs boot artifacts, enrolls keys
    when needed, and removes transient secrets.

@@ -96,6 +96,14 @@ def write(path, data, mode=0o600):
         stream.write(data if isinstance(data, bytes) else data.encode())
 
 
+def write_replacing_symlink(path, data, mode=0o644):
+    """Replace a shipped config symlink (write() refuses symlinks)."""
+    path = Path(path)
+    if path.is_symlink() or path.exists():
+        path.unlink()
+    write(path, data, mode)
+
+
 def safe_database(path):
     path = Path(path).absolute()
     if any(p.is_symlink() for p in [path, *path.parents]):
@@ -468,15 +476,17 @@ def install_identity(target, root=SECRETS):
             os.chown(path, uid, gid)
     for field in ("name", "email"):
         chroot("runuser", "-u", user, "--", "git", "config", "--global", f"user.{field}", model[f"git_{field}"])
-    write(target / "etc/hostname", model["hostname"] + "\n", 0o644)
+    # write() uses O_NOFOLLOW. Debian can ship etc/default/locale as a symlink
+    # to locale.conf, so replace symlinks for these non-secret target files.
+    write_replacing_symlink(target / "etc/hostname", model["hostname"] + "\n")
     hosts = target / "etc/hosts"
-    lines = [s for s in hosts.read_text().splitlines() if not s.startswith("127.0.1.1")]
-    write(hosts, "\n".join([*lines, f"127.0.1.1 {model['hostname']}", ""]), 0o644)
-    write(target / "etc/locale.gen", f"{model['locale']} UTF-8\n", 0o644)
-    write(target / "etc/default/locale", f"LANG={model['locale']}\n", 0o644)
+    lines = [line for line in hosts.read_text().splitlines() if not line.startswith("127.0.1.1")]
+    write_replacing_symlink(hosts, "\n".join([*lines, f"127.0.1.1 {model['hostname']}", ""]))
+    write_replacing_symlink(target / "etc/locale.gen", f"{model['locale']} UTF-8\n")
+    write_replacing_symlink(target / "etc/default/locale", f"LANG={model['locale']}\n")
     (target / "etc/localtime").unlink(missing_ok=True)
     (target / "etc/localtime").symlink_to("/usr/share/zoneinfo/" + model["timezone"])
-    write(target / "etc/timezone", model["timezone"] + "\n", 0o644)
+    write_replacing_symlink(target / "etc/timezone", model["timezone"] + "\n")
     chroot("locale-gen")
 
 

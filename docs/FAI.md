@@ -20,6 +20,12 @@ Class-script failure alone does not stop all FAI paths, so the destructive hook
 must independently validate prerequisites. No kernel-command-line disk override
 is supported. Use `tools/preview-install.sh` for read-only selection testing.
 
+Retry only after rebooting the installer. An aborted run leaves `/target` and its
+subvolumes mounted; running FAI again regenerates the temporary LUKS key while the
+previous mapper remains open, so neither the setup key nor the permanent credential
+unlocks and `findmnt`/`lsblk` report stale paths. The partition hook refuses to
+start when `/target` or `/target/boot` is still mounted.
+
 Do not use BIOS/SeaBIOS/CSM: Proxmox needs q35, OVMF, and an EFI disk. Keep KDBX on
 a separate small ext4 disk. For console access use FAI's createvt/verbose flags
 without inserting credentials in the boot command line.

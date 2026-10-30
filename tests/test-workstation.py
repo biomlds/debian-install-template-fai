@@ -144,6 +144,23 @@ class RecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Secure Boot is disabled"):
                     boot.secure_boot_enabled()
 
+    def test_identity_replaces_shipped_symlink_without_following(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            (target / "etc/default").mkdir(parents=True)
+            real = root / "locale.conf"
+            real.write_text("LANG=old\n")
+            link = target / "etc/default/locale"
+            link.symlink_to(real)
+            with self.assertRaises(OSError):
+                kdbx.write(link, "LANG=should-not-follow\n", 0o644)
+            self.assertEqual(real.read_text(), "LANG=old\n")
+            kdbx.write_replacing_symlink(link, "LANG=de_DE.UTF-8\n")
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(link.read_text(), "LANG=de_DE.UTF-8\n")
+            self.assertEqual(real.read_text(), "LANG=old\n")
+
     def test_database_rejects_world_readable_and_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "test.kdbx"

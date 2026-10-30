@@ -16,8 +16,18 @@ source "${LOGDIR:-/tmp/fai}/disk_var.sh"
     echo "disk_var.sh BOOT_DEVICE does not match the selected bootloader disk." >&2; exit 1;
 }
 mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
-efi_source=$(findmnt -n -o SOURCE "$target/boot")
-efi_disk=$(lsblk -sno PATH,TYPE "$efi_source" | awk '$2=="disk" {print $1; exit}')
+# Resolve the mounted ESP's parent disk from sysfs. findmnt can report a stale
+# /dev path (for example after a partition rescan), and lsblk then exits 32.
+efi_majmin=$(findmnt -n -o MAJ:MIN "$target/boot")
+[ -n "$efi_majmin" ] || { echo "Cannot resolve the mounted ESP device." >&2; exit 1; }
+efi_name=$(basename "$(readlink -f "/sys/dev/block/$efi_majmin")")
+[ -n "$efi_name" ] || { echo "Cannot resolve the ESP kernel device name." >&2; exit 1; }
+if [ -f "/sys/class/block/$efi_name/partition" ]; then
+    efi_parent=$(basename "$(dirname "$(readlink -f "/sys/class/block/$efi_name")")")
+    efi_disk=/dev/$efi_parent
+else
+    efi_disk=/dev/$efi_name
+fi
 [ "$(readlink -f "$efi_disk")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
     echo "Mounted ESP is not on selected bootloader disk." >&2; exit 1;
 }

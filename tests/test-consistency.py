@@ -40,11 +40,18 @@ class Configuration(unittest.TestCase):
         self.assertIn("die \"Workstation preflight", hook)
         self.assertIn("if ! ( partition_workstation )", hook)
         self.assertIn("mounted KDBX media", hook)
+        # Retrying in the same live session leaves /target mounted and makes a
+        # second setup-storage regenerate keys under an open mapper.
+        self.assertIn('mountpoint -q "$target"', hook)
+        self.assertIn("Reboot the installer before retrying", hook)
         self.assertIn("STOP_ON_ERROR=0", self.text("class/WORKSTATION.var"))
 
     def test_luks_setup_key_survives_crypttab_rewrite(self):
         hook = self.text("hooks/partition.WORKSTATION.sh")
-        self.assertIn('> "$LOGDIR/luks-setup-key"', hook)
+        # Persist the key bytes, not the path text, or cryptsetup treats the
+        # path as a passphrase and the bootstrap slot can never unlock.
+        self.assertIn('install -m 0600 "$setup_key_path" "$LOGDIR/luks-setup-key"', hook)
+        self.assertNotIn('> "$LOGDIR/luks-setup-key"', hook)
         luks = self.text("scripts/LUKS_BTRFS/10-luks-key")
         self.assertIn('setup_key=$LOGDIR/luks-setup-key', luks)
         self.assertLess(luks.index("luks-setup-key"), luks.index("[ -s \"$setup_key\" ]"))
@@ -70,6 +77,12 @@ class Configuration(unittest.TestCase):
         setup = self.text("scripts/SYSTEMD_BOOT/10-setup")
         for token in ("FAI_SELECTED_BOOT_STABLE", "BOOT_DEVICE", "efi_disk", "Mounted ESP is not on selected"):
             self.assertIn(token, setup)
+        # A stale /dev path made lsblk exit 32 and abort configure; resolve the
+        # parent disk from the mounted device's sysfs MAJ:MIN instead.
+        self.assertIn('findmnt -n -o MAJ:MIN', setup)
+        self.assertIn("/sys/dev/block/", setup)
+        self.assertIn("Cannot resolve the mounted ESP device", setup)
+        self.assertNotIn('lsblk -sno PATH,TYPE "$efi_source"', setup)
         # These guards previously exited silently, hiding the failing comparison.
         for message in ("requires a single disk", "boot stable path does not resolve", "does not match the selected bootloader disk"):
             self.assertIn(message, setup)
