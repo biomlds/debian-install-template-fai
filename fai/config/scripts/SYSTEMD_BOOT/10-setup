@@ -1,5 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
+trap 'rc=$?; echo "SYSTEMD_BOOT/10-setup failed at line $LINENO (status $rc)." >&2' ERR
 selection_env=${LOGDIR:-/tmp/fai}/disk-selection.env
 [ -s "$selection_env" ] || { echo "Missing persisted bootloader selection." >&2; exit 1; }
 # shellcheck disable=SC1090
@@ -18,8 +19,12 @@ source "${LOGDIR:-/tmp/fai}/disk_var.sh"
 mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
 # Resolve the mounted ESP's parent disk from sysfs. findmnt can report a stale
 # /dev path (for example after a partition rescan), and lsblk then exits 32.
-efi_majmin=$(findmnt -n -o MAJ:MIN "$target/boot")
+efi_majmins=$(findmnt -n -o MAJ:MIN "$target/boot" | sort -u)
+efi_majmin=$(printf '%s\n' "$efi_majmins" | sed -n '1p')
 [ -n "$efi_majmin" ] || { echo "Cannot resolve the mounted ESP device." >&2; exit 1; }
+[ "$(printf '%s\n' "$efi_majmins" | wc -l)" -eq 1 ] || {
+    echo "ESP is mounted from multiple devices." >&2; exit 1;
+}
 efi_name=$(basename "$(readlink -f "/sys/dev/block/$efi_majmin")")
 [ -n "$efi_name" ] || { echo "Cannot resolve the ESP kernel device name." >&2; exit 1; }
 if [ -f "/sys/class/block/$efi_name/partition" ]; then

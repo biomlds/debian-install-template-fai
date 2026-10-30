@@ -68,6 +68,11 @@ class Configuration(unittest.TestCase):
         for name in ("@root", "@home", "@snapshots"):
             self.assertIn(name, mount)
         self.assertNotIn("/boot/efi", mount)
+        # FAI's task_mountdisks runs mount2dir on our fstab. Mounting the same
+        # entries in the hook overmounts them and duplicates every findmnt line.
+        self.assertNotIn('mount -o noatime,compress=zstd:3,subvol=@root "$mapper" "$target"', mount)
+        self.assertNotIn('mount -o umask=0077 "$efi_device" "$target/boot"', mount)
+        self.assertIn("UUID=$efi_uuid  /boot", mount)
         luks = self.text("scripts/LUKS_BTRFS/10-luks-key")
         self.assertIn("luksAddKey --pbkdf argon2id", luks)
         self.assertIn("fewer than two active slots", luks)
@@ -80,6 +85,8 @@ class Configuration(unittest.TestCase):
         # A stale /dev path made lsblk exit 32 and abort configure; resolve the
         # parent disk from the mounted device's sysfs MAJ:MIN instead.
         self.assertIn('findmnt -n -o MAJ:MIN', setup)
+        self.assertIn("sort -u", setup)
+        self.assertIn("ESP is mounted from multiple devices", setup)
         self.assertIn("/sys/dev/block/", setup)
         self.assertIn("Cannot resolve the mounted ESP device", setup)
         self.assertNotIn('lsblk -sno PATH,TYPE "$efi_source"', setup)
