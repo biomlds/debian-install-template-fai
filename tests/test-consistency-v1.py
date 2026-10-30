@@ -24,7 +24,7 @@ class Configuration(unittest.TestCase):
         return (CFG / path).read_text()
 
     def test_preflight_before_destruction(self):
-        hook = self.text("hooks/partition.WORKSTATION")
+        hook = self.text("hooks/partition.WORKSTATION.sh")
         self.assertLess(hook.index('kdbx.py" preflight'), hook.index('"$selector" select'))
         self.assertLess(hook.index('"$selector" revalidate'), hook.index("setup-storage -X"))
         self.assertIn("/sys/firmware/efi", hook)

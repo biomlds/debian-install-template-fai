@@ -26,7 +26,7 @@ required = [
     "class/WORKSTATION.var",
     "disk_config/LUKS_BTRFS",
     "debconf/WORKSTATION",
-    "hooks/partition.WORKSTATION",
+    "hooks/partition.WORKSTATION.sh",
     "hooks/mountdisks.LUKS_BTRFS",
     "package_config/DEBIAN",
     "package_config/FAIBASE",
@@ -122,6 +122,11 @@ for path in pyfiles:
         compile(path.read_text(), str(path), "exec")
     except SyntaxError as exc:
         errors.append(f"python syntax {path.relative_to(ROOT)}: {exc}")
+    # Config-space assets are invoked directly from FAI hooks; a lost executable
+    # bit makes the hook abort and lets FAI fall back to default partitioning.
+    if path.is_relative_to(CFG / "assets") and path.read_bytes().startswith(b"#!"):
+        if not path.stat().st_mode & stat.S_IXUSR:
+            errors.append(f"not executable {path.relative_to(ROOT)}")
 
 yaml_files = [path for path in list(ROOT.rglob("*.yaml")) + list(ROOT.rglob("*.yml")) if not ignored(path)]
 for path in yaml_files:

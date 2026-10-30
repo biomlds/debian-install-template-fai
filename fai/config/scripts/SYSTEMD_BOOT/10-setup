@@ -4,11 +4,17 @@ selection_env=${LOGDIR:-/tmp/fai}/disk-selection.env
 [ -s "$selection_env" ] || { echo "Missing persisted bootloader selection." >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$selection_env"
-[ "$FAI_SELECTED_BOOT_STABLE" = "$FAI_SELECTED_OS_STABLE" ] || exit 1
-[ "$(readlink -f "$FAI_SELECTED_BOOT_STABLE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || exit 1
+[ "$FAI_SELECTED_BOOT_STABLE" = "$FAI_SELECTED_OS_STABLE" ] || {
+    echo "Boot and OS disks differ; this layout requires a single disk." >&2; exit 1;
+}
+[ "$(readlink -f "$FAI_SELECTED_BOOT_STABLE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "Persisted boot stable path does not resolve to the selected kernel device." >&2; exit 1;
+}
 # shellcheck disable=SC1090
 source "${LOGDIR:-/tmp/fai}/disk_var.sh"
-[ "$(readlink -f "$BOOT_DEVICE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || exit 1
+[ "$(readlink -f "$BOOT_DEVICE")" = "$(readlink -f "$FAI_SELECTED_BOOT_KERNEL")" ] || {
+    echo "disk_var.sh BOOT_DEVICE does not match the selected bootloader disk." >&2; exit 1;
+}
 mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
 efi_source=$(findmnt -n -o SOURCE "$target/boot")
 efi_disk=$(lsblk -sno PATH,TYPE "$efi_source" | awk '$2=="disk" {print $1; exit}')

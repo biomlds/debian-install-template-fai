@@ -331,8 +331,8 @@ def eligible_disks(lsblk_data: dict[str, Any], mounts: list[dict[str, Any]], cmd
             rejected[path] = "; ".join(sorted(set(reasons)))
             continue
         disk = disk_from_node(node, flat, links)
-        if disk.size < 10 * 1024**3:
-            rejected[path] = "smaller than 10 GiB minimum"
+        if disk.size < 11 * 1024**3:
+            rejected[path] = "smaller than 11 GiB minimum"
             continue
         eligible.append(disk)
     eligible.sort(key=lambda item: (item.stable_path, item.kernel_path))

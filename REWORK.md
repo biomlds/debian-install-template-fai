@@ -74,7 +74,7 @@ and external recovery media. Hardware failure cannot be covered by a boot entry.
   `Workstation.kdbx`, read-only with `nosuid,nodev,noexec`.
 - Validate media, file type, ownership/permissions, and symlink safety.
 - Run the unlock and schema validation at the start of
-  `hooks/partition.WORKSTATION`, before disk selection or `setup-storage`.
+  `hooks/partition.WORKSTATION.sh`, before disk selection or `setup-storage`.
   Independently recheck UEFI and all prerequisites: FAI class-script errors
   alone are not a sufficient destructive-operation guard.
 - Prompt without echo on the console. Pass the master password to

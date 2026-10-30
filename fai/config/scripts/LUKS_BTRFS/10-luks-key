@@ -8,11 +8,15 @@ umask 077
 BOOTSTRAP_LUKS_FILE=$WORKSTATION_SECRETS/luks
 crypttab=$LOGDIR/crypttab
 [ -s "$crypttab" ] || { echo "Missing setup-storage crypttab." >&2; exit 1; }
-read -r _crypt_name crypt_device setup_key _crypt_options < <(awk '!/^($|#)/ {print; exit}' "$crypttab")
+read -r _crypt_name crypt_device crypttab_key _crypt_options < <(awk '!/^($|#)/ {print; exit}' "$crypttab")
+# This script rewrites crypttab to the final "none" form below. Prefer the key
+# path persisted by the partition hook so a re-run still has the setup key.
+setup_key=$LOGDIR/luks-setup-key
+[ -s "$setup_key" ] || setup_key=$crypttab_key
 case $crypt_device in UUID=*) crypt_device=/dev/disk/by-uuid/${crypt_device#UUID=} ;; esac
 crypt_device=$(readlink -f "$crypt_device")
 [ -b "$crypt_device" ] || { echo "Invalid LUKS device." >&2; exit 1; }
-[ -s "$setup_key" ] || { echo "Missing setup-storage temporary key." >&2; exit 1; }
+[ -s "$setup_key" ] || { echo "Missing setup-storage temporary key; partition hook did not save it." >&2; exit 1; }
 [ -s "$BOOTSTRAP_LUKS_FILE" ] || { echo "Missing bootstrap LUKS credential." >&2; exit 1; }
 [ "$(cryptsetup luksDump "$crypt_device" | awk '/^Version:/ {print $2; exit}')" = 2 ] || { echo "Expected LUKS2." >&2; exit 1; }
 active_slots() {

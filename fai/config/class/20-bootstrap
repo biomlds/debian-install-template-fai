@@ -1,4 +1,11 @@
 #!/bin/sh
 set -eu
+: "${LOGDIR:=/tmp/fai}"
+# FAI logs hook failures and then runs its own default setup-storage. A failed
+# partition hook leaves skip.partition behind, which would suppress the hook and
+# the password prompt on the next attempt. Reset that state once per run.
+if [ -f "$LOGDIR/workstation-partition-failed" ]; then
+    rm -f "$LOGDIR/skip.partition" "$LOGDIR/workstation-partition-failed"
+fi
 # The partition preflight repeats validation: FAI can continue after class errors.
 exec python3 "$FAI/assets/workstation/kdbx.py" mount

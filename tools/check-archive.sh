@@ -13,7 +13,7 @@ for entry in "${entries[@]}"; do
   esac
 done
 root=${entries[0]%%/*}
-for required in README.md Makefile fai/config/assets/workstation/kdbx.py fai/config/disk_config/LUKS_BTRFS fai/config/hooks/partition.WORKSTATION fai/config/assets/disk-selection/disk_selector.py tests/test-disk-selector.py tools/validate.sh docs/SECURITY.md docs/VALIDATION.md .github/workflows/build-iso.yml; do
+for required in README.md Makefile fai/config/assets/workstation/kdbx.py fai/config/disk_config/LUKS_BTRFS fai/config/hooks/partition.WORKSTATION.sh fai/config/assets/disk-selection/disk_selector.py tests/test-disk-selector.py tools/validate.sh docs/SECURITY.md docs/VALIDATION.md .github/workflows/build-iso.yml; do
   found=0
   for entry in "${entries[@]}"; do
     if [ "$entry" = "$root/$required" ]; then found=1; break; fi

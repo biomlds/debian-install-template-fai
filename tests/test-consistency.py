@@ -24,18 +24,37 @@ class Configuration(unittest.TestCase):
         return (CFG / path).read_text()
 
     def test_preflight_before_destruction(self):
-        hook = self.text("hooks/partition.WORKSTATION")
+        hook = self.text("hooks/partition.WORKSTATION.sh")
         self.assertLess(hook.index('kdbx.py" preflight'), hook.index('"$selector" select'))
         self.assertLess(hook.index('"$selector" revalidate'), hook.index("setup-storage -X"))
         self.assertIn("/sys/firmware/efi", hook)
-        self.assertLess(hook.index('touch "$LOGDIR/skip.partition"'), hook.index('kdbx.py" preflight'))
+        # FAI treats hook failures as log-only and then runs default
+        # partitioning, so every failure must suppress task_partition.
+        self.assertIn("trap abort_partition EXIT", hook)
+        self.assertIn('touch "$LOGDIR/skip.partition" "$LOGDIR/workstation-partition-failed"', hook)
+        self.assertIn('workstation-partition-failed', self.text("class/20-bootstrap"))
+        # A checkout without the executable bit must not skip the prompt.
+        self.assertIn('python3 "$selector" select', hook)
+        self.assertIn("-s \"$WORKSTATION_SECRETS/identity.json\"", hook)
+        # .sh hooks are sourced, so die() can stop FAI instead of falling through.
+        self.assertIn("die \"Workstation preflight", hook)
+        self.assertIn("if ! ( partition_workstation )", hook)
+        self.assertIn("mounted KDBX media", hook)
         self.assertIn("STOP_ON_ERROR=0", self.text("class/WORKSTATION.var"))
+
+    def test_luks_setup_key_survives_crypttab_rewrite(self):
+        hook = self.text("hooks/partition.WORKSTATION.sh")
+        self.assertIn('> "$LOGDIR/luks-setup-key"', hook)
+        luks = self.text("scripts/LUKS_BTRFS/10-luks-key")
+        self.assertIn('setup_key=$LOGDIR/luks-setup-key', luks)
+        self.assertLess(luks.index("luks-setup-key"), luks.index("[ -s \"$setup_key\" ]"))
+        self.assertIn("cryptroot UUID=%s none luks", luks)
 
     def test_storage_contract(self):
         disk = self.text("disk_config/LUKS_BTRFS")
         self.assertRegex(disk, r"p=efi\s+/boot\s+2G\s+vfat")
         self.assertIn("--pbkdf=argon2id", disk)
-        hook = self.text("hooks/partition.WORKSTATION")
+        hook = self.text("hooks/partition.WORKSTATION.sh")
         self.assertIn('disklist=${disklist#/dev/}', hook)
         self.assertIn('setup-storage -X -f "$config" -D "$disklist"', hook)
         mount = self.text("hooks/mountdisks.LUKS_BTRFS")
@@ -51,6 +70,9 @@ class Configuration(unittest.TestCase):
         setup = self.text("scripts/SYSTEMD_BOOT/10-setup")
         for token in ("FAI_SELECTED_BOOT_STABLE", "BOOT_DEVICE", "efi_disk", "Mounted ESP is not on selected"):
             self.assertIn(token, setup)
+        # These guards previously exited silently, hiding the failing comparison.
+        for message in ("requires a single disk", "boot stable path does not resolve", "does not match the selected bootloader disk"):
+            self.assertIn(message, setup)
 
     def test_target_no_grub_or_firstboot(self):
         self.assertFalse((CFG / "package_config/GRUB_EFI").exists())
