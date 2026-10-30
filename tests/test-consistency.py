@@ -86,6 +86,8 @@ class Configuration(unittest.TestCase):
         # parent disk from the mounted device's sysfs MAJ:MIN instead.
         self.assertIn('findmnt -n -o MAJ:MIN', setup)
         self.assertIn("sort -u", setup)
+        self.assertIn("efi_majmin=${efi_majmins%%", setup)
+        self.assertNotIn("efi_majmins=$(printf", setup)
         self.assertIn("ESP is mounted from multiple devices", setup)
         self.assertIn("/sys/dev/block/", setup)
         self.assertIn("Cannot resolve the mounted ESP device", setup)

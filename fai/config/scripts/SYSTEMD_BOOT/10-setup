@@ -20,9 +20,9 @@ mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
 # Resolve the mounted ESP's parent disk from sysfs. findmnt can report a stale
 # /dev path (for example after a partition rescan), and lsblk then exits 32.
 efi_majmins=$(findmnt -n -o MAJ:MIN "$target/boot" | sort -u)
-efi_majmin=$(printf '%s\n' "$efi_majmins" | sed -n '1p')
+efi_majmin=${efi_majmins%%$'\n'*}
 [ -n "$efi_majmin" ] || { echo "Cannot resolve the mounted ESP device." >&2; exit 1; }
-[ "$(printf '%s\n' "$efi_majmins" | wc -l)" -eq 1 ] || {
+[ "$efi_majmins" = "$efi_majmin" ] || {
     echo "ESP is mounted from multiple devices." >&2; exit 1;
 }
 efi_name=$(basename "$(readlink -f "/sys/dev/block/$efi_majmin")")
