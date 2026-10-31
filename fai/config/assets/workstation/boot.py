@@ -28,6 +28,36 @@ def run(*args):
     return kdbx.run(list(args)).decode().strip()
 
 
+def run_detailed(*args):
+    """Run a command, surfacing stderr instead of a generic suppressed failure."""
+    result = subprocess.run([str(x) for x in args], capture_output=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).decode(errors="replace").strip()
+        detail = " | ".join(detail.splitlines()[-3:]) or "no output"
+        raise RuntimeError(f"{Path(str(args[0])).name} failed ({result.returncode}): {detail}")
+    return result.stdout.decode().strip()
+
+
+def sbctl_config(root):
+    keys = root / "keys"
+    lines = [
+        f"keydir: {keys}",
+        f"guid: {root / 'GUID'}",
+        f"files_db: {root / 'files.json'}",
+        f"bundles_db: {root / 'bundles.json'}",
+        "landlock: false",
+        "keys:",
+    ]
+    for name, directory in (("pk", "PK"), ("kek", "KEK"), ("db", "db")):
+        lines += [
+            f"  {name}:",
+            f"    privkey: {keys / directory / (directory + '.key')}",
+            f"    pubkey: {keys / directory / (directory + '.pem')}",
+            "    type: file",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def run_snapper(*args):
     """Run snapper without D-Bus when no system bus exists (install chroot)."""
     command = [str(x) for x in args]
@@ -431,8 +461,8 @@ def main():
                 snapshot(root, "Initial installation recovery baseline (not yet boot-tested)")
                 if kdbx.firmware_mode(root) == "setup":
                     config = root / "sbctl.conf"
-                    kdbx.write(config, f"keydir: {root / 'keys'}\nguid: {root / 'GUID'}\nfiles_db: {root / 'files.json'}\nbundles_db: {root / 'bundles.json'}\nlandlock: false\n")
-                    run("sbctl", "--config", config, "enroll-keys", "-m")
+                    kdbx.write(config, sbctl_config(root))
+                    run_detailed("sbctl", "--config", config, "enroll-keys", "-m")
                     if kdbx.firmware_mode(root) != "enrolled":
                         raise RuntimeError("Firmware enrollment did not leave Setup Mode")
                 return

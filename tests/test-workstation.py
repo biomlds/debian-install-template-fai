@@ -144,6 +144,15 @@ class RecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Secure Boot is disabled"):
                     boot.secure_boot_enabled()
 
+    def test_sbctl_config_lists_explicit_key_paths(self):
+        root = Path("/run/workstation-secrets")
+        config = boot.sbctl_config(root)
+        self.assertIn("keys:\n", config)
+        for name, directory in (("pk", "PK"), ("kek", "KEK"), ("db", "db")):
+            self.assertIn(f"  {name}:", config)
+            self.assertIn(f"privkey: {root}/keys/{directory}/{directory}.key", config)
+            self.assertIn(f"pubkey: {root}/keys/{directory}/{directory}.pem", config)
+
     def test_snapper_uses_no_dbus_only_without_system_bus(self):
         completed = Mock(returncode=0, stdout=b"7\n", stderr=b"")
         with patch("boot.Path.exists", return_value=False), patch("boot.subprocess.run", return_value=completed) as run:
