@@ -19,13 +19,18 @@ source "${LOGDIR:-/tmp/fai}/disk_var.sh"
 mountpoint -q "$target/boot" || { echo "ESP is not mounted." >&2; exit 1; }
 # Resolve the mounted ESP's parent disk from sysfs. findmnt can report a stale
 # /dev path (for example after a partition rescan), and lsblk then exits 32.
-efi_majmins=$(findmnt -n -o MAJ:MIN "$target/boot" | sort -u)
+# -r is required: the formatted MAJ:MIN column is right-aligned and padded,
+# which turns "253:1" into " 253:1 " and breaks /sys/dev/block lookup.
+efi_majmins=$(findmnt -rn -o MAJ:MIN "$target/boot" | awk '{print $1}' | sort -u)
 efi_majmin=${efi_majmins%%$'\n'*}
 [ -n "$efi_majmin" ] || { echo "Cannot resolve the mounted ESP device." >&2; exit 1; }
 [ "$efi_majmins" = "$efi_majmin" ] || {
     echo "ESP is mounted from multiple devices." >&2; exit 1;
 }
-efi_name=$(basename "$(readlink -f "/sys/dev/block/$efi_majmin")")
+[ -L "/sys/dev/block/$efi_majmin" ] || {
+    echo "ESP device $efi_majmin is absent from sysfs." >&2; exit 1;
+}
+efi_name=$(basename "$(readlink "/sys/dev/block/$efi_majmin")")
 [ -n "$efi_name" ] || { echo "Cannot resolve the ESP kernel device name." >&2; exit 1; }
 if [ -f "/sys/class/block/$efi_name/partition" ]; then
     efi_parent=$(basename "$(dirname "$(readlink -f "/sys/class/block/$efi_name")")")

@@ -84,12 +84,14 @@ class Configuration(unittest.TestCase):
             self.assertIn(token, setup)
         # A stale /dev path made lsblk exit 32 and abort configure; resolve the
         # parent disk from the mounted device's sysfs MAJ:MIN instead.
-        self.assertIn('findmnt -n -o MAJ:MIN', setup)
+        self.assertIn('findmnt -rn -o MAJ:MIN', setup)
+        self.assertIn("awk '{print $1}'", setup)
         self.assertIn("sort -u", setup)
         self.assertIn("efi_majmin=${efi_majmins%%", setup)
         self.assertNotIn("efi_majmins=$(printf", setup)
         self.assertIn("ESP is mounted from multiple devices", setup)
-        self.assertIn("/sys/dev/block/", setup)
+        self.assertIn('readlink "/sys/dev/block/$efi_majmin"', setup)
+        self.assertIn("is absent from sysfs", setup)
         self.assertIn("Cannot resolve the mounted ESP device", setup)
         self.assertNotIn('lsblk -sno PATH,TYPE "$efi_source"', setup)
         # These guards previously exited silently, hiding the failing comparison.
