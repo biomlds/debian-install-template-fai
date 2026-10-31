@@ -4,8 +4,9 @@ set -Eeuo pipefail
 trap 'rc=$?; echo "FINAL/99-finalize failed at line $LINENO (status $rc)." >&2' ERR
 # shellcheck disable=SC1090
 source "${LOGDIR:-/tmp/fai}/disk-selection.env"
-# Restore real service/package commands before capturing the recovery root.
-fai-divert -R
+# 10-setup creates local (not fai-package) diversions and replaces the Debian
+# ESP hooks with no-op stubs. Keep them: FAI diversion cleanup would not remove
+# local diversions, and restoring the real hooks would overwrite signed artifacts.
 # FAI keeps the package database/cache in temporary mounts during configure.
 # Flush them BEFORE the baseline snapshot so recovery has a complete dpkg DB.
 mkramdisk -au || { echo "Failed to flush package ramdisks before the baseline snapshot." >&2; exit 1; }
