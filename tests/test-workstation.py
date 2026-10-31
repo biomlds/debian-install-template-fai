@@ -144,6 +144,15 @@ class RecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Secure Boot is disabled"):
                     boot.secure_boot_enabled()
 
+    def test_snapper_uses_no_dbus_only_without_system_bus(self):
+        completed = Mock(returncode=0, stdout=b"7\n", stderr=b"")
+        with patch("boot.Path.exists", return_value=False), patch("boot.subprocess.run", return_value=completed) as run:
+            self.assertEqual(boot.run_snapper("snapper", "-c", "root", "list"), "7")
+            self.assertEqual(run.call_args.args[0][:2], ["snapper", "--no-dbus"])
+        with patch("boot.Path.exists", return_value=True), patch("boot.subprocess.run", return_value=completed) as run:
+            boot.run_snapper("snapper", "-c", "root", "list")
+            self.assertEqual(run.call_args.args[0][:2], ["snapper", "-c"])
+
     def test_identity_replaces_shipped_symlink_without_following(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

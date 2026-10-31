@@ -28,6 +28,19 @@ def run(*args):
     return kdbx.run(list(args)).decode().strip()
 
 
+def run_snapper(*args):
+    """Run snapper without D-Bus when no system bus exists (install chroot)."""
+    command = [str(x) for x in args]
+    if not Path("/run/dbus/system_bus_socket").exists():
+        command.insert(1, "--no-dbus")
+    result = subprocess.run(command, capture_output=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).decode(errors="replace").strip()
+        detail = " | ".join(detail.splitlines()[-3:]) or "no output"
+        raise RuntimeError(f"snapper failed ({result.returncode}): {detail}")
+    return result.stdout.decode().strip()
+
+
 def atomic(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".new")
@@ -232,8 +245,8 @@ def publish_normal(root):
 
 
 def snapshot(root, description="Protected pre-update"):
-    number = int(run("snapper", "-c", "root", "create", "--type", "single", "--print-number",
-                     "--description", description))
+    number = int(run_snapper("snapper", "-c", "root", "create", "--type", "single", "--print-number",
+                             "--description", description))
     saved = Path(f"/.snapshots/{number}/snapshot")
     archive = kernel_archive(saved)
     esp_uuid = run("findmnt", "-n", "-o", "UUID", "--mountpoint", ESP)
@@ -259,7 +272,7 @@ def prune(state):
         if number not in keep:
             (LINUX / f"ws-protected-{number}.efi").unlink(missing_ok=True)
             run("sync", "-f", LINUX)
-            run("snapper", "-c", "root", "delete", str(number))
+            run_snapper("snapper", "-c", "root", "delete", str(number))
             (STATE / f"staged/snapshot-{number}.efi").unlink(missing_ok=True)
             state["protected"].remove(record)
             save_state(state)
@@ -395,7 +408,7 @@ def main():
         if args.action == "security":
             normal_root()
             check()
-            run("snapper", "-c", "root", "create", "--description", "Before unattended security update", "--cleanup-algorithm", "number")
+            run_snapper("snapper", "-c", "root", "create", "--description", "Before unattended security update", "--cleanup-algorithm", "number")
             # This wrapper, not apt-daily-upgrade, owns all unattended transactions.
             result = subprocess.run(["unattended-upgrade", "--verbose"])
             if result.returncode:
