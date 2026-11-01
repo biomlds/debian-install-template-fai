@@ -18,7 +18,8 @@ rsync -a --delete --exclude __pycache__ --exclude '*.pyc' "$repo/fai/config/" /s
 # Apt installations routinely hit transient network breakage (broken-pipe during
 # a fetch), so retry the whole NFSROOT build a few times before failing.
 retry_n() {
-    local attempts=$1 shift
+    local attempts; attempts=$1
+    shift
     local n=0 rc=0
     while [ "$n" -lt "$attempts" ]; do
         n=$((n + 1))
