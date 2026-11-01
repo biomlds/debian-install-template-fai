@@ -48,6 +48,12 @@ cat > /srv/fai/nfsroot/etc/systemd/system/fai.service.d/10-ssh-host-keys.conf <<
 [Service]
 ExecStartPre=/usr/bin/ssh-keygen -A
 UNIT
+# Standalone ISO: the booting NFSROOT uses the packaged fai-client fai.conf,
+# which defaults LOGUSER=fai. That makes task_chboot try to ssh an install
+# server and fail on the empty SERVER. Clear LOGUSER so chboot and remote
+# log saving become no-ops (local install keeps local logs).
+install -d -m 0755 /srv/fai/nfsroot/etc/fai
+printf 'LOGUSER=\n' > /srv/fai/nfsroot/etc/fai/fai.conf
 fai-cd -M "$out"
 (cd "$(dirname "$out")" && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
 # Public ISO policy: no input values, private keys, password hashes, or bootstrap media payloads.
