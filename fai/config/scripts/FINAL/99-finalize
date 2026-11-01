@@ -31,11 +31,12 @@ touch "$target/run/workstation-install"
 $ROOTCMD systemctl enable ssh.service workstation-flatpaks.timer workstation-uki-check.timer \
     workstation-security-upgrade.timer
 $ROOTCMD systemctl enable fwupd-refresh.timer 2>/dev/null || true
-$ROOTCMD bootctl --esp-path=/boot --no-variables install
-# Register only the primary signed loader path; fallback is also signed below.
+# bootctl install writes the NVRAM "Linux Boot Manager" entry and puts it first
+# in BootOrder (more reliable than a manual efibootmgr inside the chroot).
+# It copies the unsigned loader first; workstation-secureboot replaces the ESP
+# copies with signed ones below.
+$ROOTCMD bootctl --esp-path=/boot install
 $ROOTCMD workstation-secureboot install --secrets /run/workstation-secrets
-$ROOTCMD bootctl --esp-path=/boot --no-variables is-installed
-$ROOTCMD efibootmgr --create --disk "$FAI_SELECTED_BOOT_KERNEL" --part 1 \
-    --label 'Linux Boot Manager' --loader '\EFI\systemd\systemd-bootx64.efi'
+$ROOTCMD bootctl --esp-path=/boot is-installed
 $ROOTCMD systemctl daemon-reload
 echo 'Installation signed. Boot a recovery entry and run: sudo workstation-secureboot confirm'
