@@ -15,10 +15,26 @@ install -m 0644 "$repo/server/nfsroot.conf.example" /etc/fai/nfsroot.conf
 install -m 0644 "$repo/server/fai.conf.example" /etc/fai/fai.conf
 rsync -a --delete --exclude __pycache__ --exclude '*.pyc' "$repo/fai/config/" /srv/fai/config/
 # Use a fresh NFSROOT by default; reuse must be explicit and is not used by CI.
+# Apt installations routinely hit transient network breakage (broken-pipe during
+# a fetch), so retry the whole NFSROOT build a few times before failing.
+retry_n() {
+    local attempts=$1 shift
+    local n=0 rc=0
+    while [ "$n" -lt "$attempts" ]; do
+        n=$((n + 1))
+        if "$@"; then
+            return 0
+        fi
+        rc=$?
+        echo "NFSROOT build attempt $n/$attempts failed (rc=$rc); retrying" >&2
+        sleep 5
+    done
+    return "$rc"
+}
 if [ "${FAI_REUSE_NFSROOT:-0}" = 1 ]; then
-    fai-make-nfsroot -v -k
+    retry_n "${NFSROOT_ATTEMPTS:-3}" fai-make-nfsroot -v -k
 else
-    fai-make-nfsroot -v -f
+    retry_n "${NFSROOT_ATTEMPTS:-3}" fai-make-nfsroot -v -f
 fi
 chroot /srv/fai/nfsroot keepassxc-cli --version
 # Verify shared-library compatibility of the vendored signer inside NFSROOT.
