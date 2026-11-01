@@ -135,6 +135,16 @@ def mount_media():
     return safe_database(MEDIA / "Workstation.kdbx")
 
 
+def normalize_guid(path):
+    """Rewrite a GUID file as canonical 36-char text (no trailing newline).
+
+    sbctl's uuid.Parse rejects the trailing newline that validate_keys(, which
+    strips, tolerates."""
+    parsed = uuid.UUID(path.read_bytes().strip().decode())
+    path.write_bytes(str(parsed).encode())
+    os.chmod(path, 0o600)
+
+
 def validate_keys(root):
     for name in ("PK", "KEK", "db"):
         key = root / "keys" / name / f"{name}.key"
@@ -388,6 +398,7 @@ def extract(database, root, *, identity=True, console=False):
             for suffix in ("key", "pem"):
                 attachment("SecureBoot", f"{name}.{suffix}", root / "keys" / name / f"{name}.{suffix}")
         attachment("SecureBoot", "GUID", root / "GUID")
+        normalize_guid(root / "GUID")
         validate_keys(root)
         if not identity:
             return

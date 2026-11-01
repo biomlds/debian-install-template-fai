@@ -144,6 +144,13 @@ class RecoveryTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Secure Boot is disabled"):
                     boot.secure_boot_enabled()
 
+    def test_normalize_guid_strips_newline(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "GUID"
+            path.write_text("11111111-2222-3333-4444-555555555555\n")
+            kdbx.normalize_guid(path)
+            self.assertEqual(path.read_bytes(), b"11111111-2222-3333-4444-555555555555")
+
     def test_sbctl_config_lists_explicit_key_paths(self):
         root = Path("/run/workstation-secrets")
         config = boot.sbctl_config(root)
