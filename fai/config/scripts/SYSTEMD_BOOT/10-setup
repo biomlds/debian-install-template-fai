@@ -66,8 +66,9 @@ install -d -m 0700 "$target/boot/loader"
 cat > "$target/boot/loader/loader.conf" <<'LOADER'
 default debian.efi
 timeout 5
+console-mode auto
 editor no
-auto-entries yes
+auto-entries no
 auto-firmware yes
 LOADER
 # Defer bootctl install until FINAL so no package can replace signed artifacts.

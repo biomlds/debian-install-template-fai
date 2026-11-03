@@ -38,5 +38,13 @@ $ROOTCMD systemctl enable fwupd-refresh.timer 2>/dev/null || true
 $ROOTCMD bootctl --esp-path=/boot install
 $ROOTCMD workstation-secureboot install --secrets /run/workstation-secrets
 $ROOTCMD bootctl --esp-path=/boot is-installed
+# Remove stale type-1 loader entries written by kernel-install during instsoft
+# (before layout=other hooks were deployed). boot.py publishes signed type-2 UKIs
+# under /boot/EFI/Linux; raw-kernel auto-entries are disabled in loader.conf.
+# vmlinuz-*/initrd are kept on the ESP because build_normal() uses them as the
+# UKI source.
+if [ -d "$target/boot/loader/entries" ]; then
+    rm -f "$target/boot/loader/entries/"*.conf
+fi
 $ROOTCMD systemctl daemon-reload
 echo 'Installation signed. Boot a recovery entry and run: sudo workstation-secureboot confirm'
