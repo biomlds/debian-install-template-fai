@@ -16,7 +16,8 @@ sudo workstation-rollback NUMBER --database /private/Workstation.kdbx
 
 Rollback must run from recovery, refuses a mounted active `@root`, clones the
 selected protected snapshot, preserves the broken root as `@root-broken-*`, and
-publishes a signed normal UKI. Reboot manually. Do not delete the broken root until
+publishes a signed normal UKI and both signed bootloader copies from the restored
+root. Reboot manually. Do not delete the broken root until
 you have checked the restored system and recovered any required root data.
 
 An interrupted rollback can leave `@root-rollback-candidate` or a renamed broken
@@ -30,8 +31,21 @@ The recovery UKI still selects its snapshot independently of the `@root` name.
 Boot external UEFI recovery media (temporarily disable Secure Boot if necessary),
 unlock LUKS, mount `@root`, `@home`, `@snapshots` and ESP at their usual locations,
 bind proc/sys/dev/run, and chroot. Restore systemd-boot/UKIs with offline KDBX and
-`workstation-secureboot sign`. Register the EFI entry with efibootmgr as needed.
+`workstation-secureboot repair --database /private/Workstation.kdbx`.
+Repair uses the kernel/initramfs archives on the encrypted root, so it also works
+with an empty ESP. It restores both signed bootloader copies, the normal UKI,
+registered recovery UKIs and loader configuration, and updates `/etc/fstab` for
+the mounted ESP UUID. Rebuilt recovery images whose bytes change lose their
+boot-tested status: boot and confirm a recovery entry again before unattended
+updates can resume. Repair preserves any pending boot-stack-change marker;
+finish pending updates with `workstation-update` after restoring a baseline.
+Register the EFI entry with efibootmgr as needed.
 Do not run an unsigned bootctl update over working signed files.
+
+The `workstation-recover` helper selects only a FAT GPT EFI System Partition on
+the same physical disk as the selected LUKS device. If multiple ESPs exist there,
+it prompts for a choice and validates it before mounting. A label alone is never
+used to select an ESP.
 
 ## Missing signing keys or changed firmware keys
 

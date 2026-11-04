@@ -107,7 +107,8 @@ class Configuration(unittest.TestCase):
         self.assertIn("workstation-security-upgrade.timer", final)
         self.assertIn('"$FAI/assets/workstation/kdbx.py" cleanup', final)
         self.assertLess(final.index("mkramdisk -au"), final.index("workstation-secureboot install"))
-        self.assertNotIn("fai-divert -R", final)
+        self.assertLess(final.index("fai-divert -R"), final.index("workstation-secureboot install"))
+        self.assertIn("dpkg-divert --list fai", final)
         self.assertIn("dpkg-divert --local", self.text("scripts/SYSTEMD_BOOT/10-setup"))
         self.assertLess(final.index("systemctl enable ssh.service"), final.index("workstation-secureboot install"))
 

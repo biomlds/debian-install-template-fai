@@ -10,18 +10,33 @@ echo
 read -rp "LUKS device (e.g. /dev/nvme0n1p2): " LUKS
 read -rp "Crypt name [cryptroot]: " CRYPT
 CRYPT=${CRYPT:-cryptroot}
+[[ $CRYPT =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Invalid mapper name." >&2; exit 1; }
+# Resolve and validate before opening/mounting anything. Ambiguity requires a
+# choice, which is checked against the same physical disk and GPT ESP type.
+if ! ESP=$(python3 /usr/local/lib/workstation/recovery.py "$LUKS"); then
+    read -rp "ESP device on selected LUKS disk: " ESP
+    ESP=$(python3 /usr/local/lib/workstation/recovery.py "$LUKS" "$ESP")
+fi
+mountpoint -q /mnt/recover && { echo "/mnt/recover is already mounted." >&2; exit 1; }
+opened=0
+cleanup(){
+    if [ "$opened" = 1 ]; then
+        umount -R /mnt/recover 2>/dev/null || true
+        cryptsetup luksClose "$CRYPT" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 cryptsetup luksOpen "$LUKS" "$CRYPT"
+opened=1
 mkdir -p /mnt/recover
-mount -o subvol=@root /dev/mapper/$CRYPT /mnt/recover
-mount -o subvol=@home /dev/mapper/$CRYPT /mnt/recover/home
-mount -o subvol=@snapshots /dev/mapper/$CRYPT /mnt/recover/.snapshots 2>/dev/null || true
-ESP=$(blkid -t LABEL=EFI -o device | head -n1)
-if [ -z "$ESP" ]; then read -rp "ESP device: " ESP; fi
+mount -o subvol=@root "/dev/mapper/$CRYPT" /mnt/recover
+mount -o subvol=@home "/dev/mapper/$CRYPT" /mnt/recover/home
+mount -o subvol=@snapshots "/dev/mapper/$CRYPT" /mnt/recover/.snapshots
 mount "$ESP" /mnt/recover/boot
-for m in proc sys dev run; do mount --bind /$m /mnt/recover/$m; done
+for m in proc sys dev run; do
+    mount --rbind /$m /mnt/recover/$m
+    mount --make-rslave /mnt/recover/$m
+done
 echo "Chrooting into /mnt/recover. Type exit to return."
 PS1='(recover) ' chroot /mnt/recover /bin/bash
-for m in run dev sys proc; do umount -R /mnt/recover/$m 2>/dev/null || true; done
-umount -R /mnt/recover 2>/dev/null || true
-cryptsetup luksClose "$CRYPT" 2>/dev/null || true
 echo "Done"

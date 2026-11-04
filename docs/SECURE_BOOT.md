@@ -57,7 +57,12 @@ published. Normal and previous signed UKIs are separate from snapshot recovery.
 
 Direct APT boot-stack changes are marked pending by kernel hooks. Complete them
 with `workstation-update`; use `workstation-secureboot sign --database ...` only
-for explicit repair after checking recovery state. No signing key is kept in
+for explicit re-signing with intact recovery artifacts. Use
+`workstation-secureboot repair --database ...` to reconstruct a lost/damaged ESP
+from saved kernel archives; see [Recovery](RECOVERY.md). Existing installations
+without a deployed-loader checksum can establish it through `sign` after updating
+the maintenance helper. Checks compare both deployed loader copies against that
+checksum as well as verifying their signatures. No signing key is kept in
 `/var/lib/sbctl`. UKI building uses dracut and `/usr/lib/systemd/ukify` explicitly;
 kernel-install automatic publication is disabled with `layout=other`.
 

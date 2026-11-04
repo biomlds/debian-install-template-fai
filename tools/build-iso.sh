@@ -25,8 +25,9 @@ retry_n() {
         n=$((n + 1))
         if "$@"; then
             return 0
+        else
+            rc=$?
         fi
-        rc=$?
         echo "NFSROOT build attempt $n/$attempts failed (rc=$rc); retrying" >&2
         sleep 5
     done

@@ -22,6 +22,7 @@ STATE = Path("/var/lib/workstation-uki")
 ESP = Path("/boot")
 LINUX = ESP / "EFI/Linux"
 CERT = Path("/etc/workstation/secureboot/db.pem")
+FSTAB = Path("/etc/fstab")
 
 
 def run(*args):
@@ -206,18 +207,30 @@ def sign(source, destination, root):
     run("sync", "-f", destination.parent)
 
 
-def sign_bootloader(root):
-    source = Path("/usr/lib/systemd/boot/efi/systemd-bootx64.efi")
+def stage_bootloader(root, system=Path("/")):
+    """Sign the selected root's loader before changing roots or deployed files."""
+    source = system / "usr/lib/systemd/boot/efi/systemd-bootx64.efi"
+    staged = STATE / "staged/systemd-boot-signed.efi"
+    sign(source, staged, root)
+    fwupd = system / "usr/libexec/fwupd/efi/fwupdx64.efi"
+    if not fwupd.exists():
+        fwupd = system / "usr/lib/fwupd/efi/fwupdx64.efi"
+    if fwupd.exists():
+        sign(fwupd, fwupd.with_suffix(".efi.signed"), root)
+    return staged, hash_file(source)
+
+
+def publish_bootloader(staged, source_hash, state_dir=None):
+    state_dir = STATE if state_dir is None else state_dir
     # Write signed artifacts ourselves: bootctl update must never replace them.
     for destination in (ESP / "EFI/systemd/systemd-bootx64.efi", ESP / "EFI/BOOT/BOOTX64.EFI"):
-        sign(source, destination, root)
-    fwupd = Path("/usr/libexec/fwupd/efi/fwupdx64.efi")
-    if not fwupd.exists():
-        fwupd = Path("/usr/lib/fwupd/efi/fwupdx64.efi")
-    if fwupd.exists():
-        # fwupd prefers the .signed sibling when installing its capsule loader.
-        sign(fwupd, fwupd.with_suffix(".efi.signed"), root)
-    atomic(STATE / "boot-source.sha256", hash_file(source).encode())
+        atomic(destination, staged.read_bytes())
+    atomic(state_dir / "boot-source.sha256", source_hash.encode())
+    atomic(state_dir / "boot-deployed.sha256", hash_file(staged).encode())
+
+
+def sign_bootloader(root):
+    publish_bootloader(*stage_bootloader(root))
 
 
 def base_cmdline():
@@ -277,8 +290,16 @@ def publish_normal(root):
 def snapshot(root, description="Protected pre-update"):
     number = int(run_snapper("snapper", "-c", "root", "create", "--type", "single", "--print-number",
                              "--description", description))
-    saved = Path(f"/.snapshots/{number}/snapshot")
-    archive = kernel_archive(saved)
+    destination = publish_recovery(number, root)
+    state = load_state()
+    state["protected"].append({"id": number, "sha256": hash_file(destination), "boot_tested": False})
+    save_state(state)
+    prune(state)
+    return number
+
+
+def publish_recovery(number, root):
+    archive = kernel_archive(Path(f"/.snapshots/{number}/snapshot"))
     esp_uuid = run("findmnt", "-n", "-o", "UUID", "--mountpoint", ESP)
     cmdline = (base_cmdline() + f" rootflags=subvol=@snapshots/{number}/snapshot ro systemd.volatile=overlay"
                f" workstation.snapshot={number} rd.fstab=no fstab=no systemd.mask=systemd-remount-fs.service"
@@ -288,11 +309,54 @@ def snapshot(root, description="Protected pre-update"):
     staged = build_uki(archive, cmdline, STATE / f"staged/snapshot-{number}.efi", f"Recovery snapshot {number}")
     destination = LINUX / f"ws-protected-{number}.efi"
     sign(staged, destination, root)
+    return destination
+
+
+def repair(root):
+    """Reconstruct an empty/damaged ESP using saved kernels, not ESP sources."""
+    normal_root()
     state = load_state()
-    state["protected"].append({"id": number, "sha256": hash_file(destination), "boot_tested": False})
-    save_state(state)
-    prune(state)
-    return number
+    # Validate all source archives before publishing any replacements.
+    archive = kernel_archive(Path("/"))
+    for record in state["protected"]:
+        kernel_archive(Path(f"/.snapshots/{record['id']}/snapshot"))
+    staged = build_uki(archive, base_cmdline() + " rootflags=subvol=@root rw",
+                       STATE / "staged/repair.efi", "Debian workstation")
+    signed = STATE / "staged/repair-signed.efi"
+    sign(staged, signed, root)
+    loader, source_hash = stage_bootloader(root)
+    # Keep the source expected by future normal UKI rebuilds after ESP loss.
+    atomic(ESP / f"vmlinuz-{archive.name}", (archive / "vmlinuz").read_bytes())
+    atomic(LINUX / "debian.efi", signed.read_bytes())
+    atomic(STATE / "normal.sha256", hash_file(LINUX / "debian.efi").encode())
+    publish_bootloader(loader, source_hash)
+    for record in state["protected"]:
+        destination = publish_recovery(record["id"], root)
+        digest = hash_file(destination)
+        if digest != record["sha256"]:
+            # Rebuilt UKIs (including a new ESP UUID) need a fresh boot test.
+            record["boot_tested"] = False
+            if state["known_good"] == record["id"]:
+                state["known_good"] = None
+        record["sha256"] = digest
+        save_state(state)
+    atomic(ESP / "loader/loader.conf", b"default debian.efi\ntimeout 5\neditor no\nauto-entries no\nauto-firmware yes\n")
+    update_esp_fstab(FSTAB)
+    print("ESP rebuilt. Register its EFI entry if needed; boot and confirm rebuilt recovery entries.")
+
+
+def update_esp_fstab(fstab):
+    """A replacement ESP's UUID must also survive a later snapshot rollback."""
+    esp_uuid = run("findmnt", "-n", "-o", "UUID", "--mountpoint", ESP)
+    if not re.fullmatch(r"[A-Za-z0-9-]+", esp_uuid):
+        raise RuntimeError("Invalid mounted ESP UUID")
+    lines = fstab.read_text().splitlines()
+    for index, line in enumerate(lines):
+        fields = line.split()
+        if fields and not fields[0].startswith("#") and len(fields) >= 4 and fields[1] == "/boot":
+            fields[0] = f"UUID={esp_uuid}"
+            lines[index] = "\t".join(fields)
+    atomic(fstab, ("\n".join(lines) + "\n").encode())
 
 
 def prune(state):
@@ -360,10 +424,12 @@ def rollback(number, root):
                 raise RuntimeError("@root is still mounted; refusing rollback")
         run("btrfs", "subvolume", "snapshot", source, candidate)
         atomic(candidate / "var/lib/workstation-uki/state.json", json.dumps(live_state, indent=2).encode())
+        update_esp_fstab(candidate / "etc/fstab")
         staged = build_uki(kernel_archive(candidate),
                            base_cmdline() + " rootflags=subvol=@root rw", STATE / "staged/rollback.efi", "Debian workstation")
         signed = STATE / "staged/rollback-signed.efi"
         sign(staged, signed, root)
+        loader, source_hash = stage_bootloader(root, candidate)
         backup = top / f"@root-broken-{time.time_ns()}"
         working.rename(backup)
         try:
@@ -374,6 +440,7 @@ def rollback(number, root):
         # Explicit rootflags select @root even if the old Btrfs default still exists.
         atomic(LINUX / "debian.efi", signed.read_bytes())
         atomic(working / "var/lib/workstation-uki/normal.sha256", hash_file(LINUX / "debian.efi").encode())
+        publish_bootloader(loader, source_hash, working / "var/lib/workstation-uki")
         (working / "var/lib/workstation-uki/pending").unlink(missing_ok=True)
         print(f"Restored @root; preserved broken system as {backup.name}. Reboot manually.")
 
@@ -381,9 +448,13 @@ def rollback(number, root):
 def check(*, allow_pending=False):
     secure_boot_enabled()
     state = load_state()
+    deployed = STATE / "boot-deployed.sha256"
+    deployed_hash = deployed.read_text().strip() if deployed.exists() else None
     if recovery_id() is not None:
         with top_level() as top:
             state = json.loads((top / "@root/var/lib/workstation-uki/state.json").read_text())
+            deployed = top / "@root/var/lib/workstation-uki/boot-deployed.sha256"
+            deployed_hash = deployed.read_text().strip() if deployed.exists() else None
     if state["known_good"] is None:
         raise RuntimeError("No boot-tested recovery baseline: boot a recovery entry and run confirm")
     baseline = next((r for r in state["protected"] if r["id"] == state["known_good"]), None)
@@ -398,6 +469,11 @@ def check(*, allow_pending=False):
             raise RuntimeError("Protected snapshot missing")
     for path in (LINUX / "debian.efi", ESP / "EFI/systemd/systemd-bootx64.efi", ESP / "EFI/BOOT/BOOTX64.EFI"):
         verify(path)
+    # Existing installations can establish the new deployed hash through sign.
+    if (deployed_hash is None and not allow_pending) or (deployed_hash is not None and any(
+            hash_file(path) != deployed_hash for path in (
+                ESP / "EFI/systemd/systemd-bootx64.efi", ESP / "EFI/BOOT/BOOTX64.EFI"))):
+        raise RuntimeError("Deployed bootloader checksum mismatch; run workstation-secureboot repair with KDBX")
     installed_source = STATE / "boot-source.sha256"
     if not allow_pending and (not installed_source.exists() or installed_source.read_text().strip() !=
                               hash_file(Path("/usr/lib/systemd/boot/efi/systemd-bootx64.efi"))):
@@ -408,7 +484,7 @@ def check(*, allow_pending=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("install", "sign", "snapshot", "confirm", "check", "status", "update", "rollback", "security", "stage"))
+    parser.add_argument("action", choices=("install", "sign", "repair", "snapshot", "confirm", "check", "status", "update", "rollback", "security", "stage"))
     parser.add_argument("number", nargs="?", type=int)
     parser.add_argument("--database", type=Path)
     parser.add_argument("--secrets", type=Path, help=argparse.SUPPRESS)
@@ -445,6 +521,9 @@ def main():
                 raise RuntimeError("Unattended security upgrade failed; inspect journal")
             return
         with keys(args) as root:
+            if args.action == "repair":
+                repair(root)
+                return
             if args.action == "rollback":
                 if args.number is None:
                     raise RuntimeError("Supply a protected snapshot number")

@@ -10,6 +10,11 @@ source "${LOGDIR:-/tmp/fai}/disk-selection.env"
 # FAI keeps the package database/cache in temporary mounts during configure.
 # Flush them BEFORE the baseline snapshot so recovery has a complete dpkg DB.
 mkramdisk -au || { echo "Failed to flush package ramdisks before the baseline snapshot." >&2; exit 1; }
+# Restore installer no-op programs before saving a recoverable root. This removes
+# only diversions owned by package fai; our local boot-hook diversions remain.
+fai-divert -R
+remaining_diversions=$($ROOTCMD dpkg-divert --list fai)
+[ -z "$remaining_diversions" ] || { echo "FAI diversions remain; refusing baseline snapshot." >&2; exit 1; }
 fcopy -riM /etc/systemd/system
 fcopy -riM /usr/local/sbin
 chmod 0755 "$target/usr/local/sbin/"{workstation-*,incus-init-workstation}

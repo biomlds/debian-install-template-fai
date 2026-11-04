@@ -14,7 +14,7 @@ partition_workstation() {
     selection=$LOGDIR/disk-selection.json
     selection_env=$LOGDIR/disk-selection.env
     config=$FAI/disk_config/LUKS_BTRFS
-    install -d -m 0700 "$LOGDIR"
+    install -d -m 0700 "$LOGDIR" || exit 1
     : "${target:=/target}"
 
     # A previous aborted run leaves /target (and its subvolumes) mounted. A new
@@ -47,7 +47,9 @@ partition_workstation() {
     if [ "$(uname -m)" != x86_64 ] || [ ! -d /sys/firmware/efi ]; then
         echo "amd64 UEFI is required." >&2; exit 1;
     fi
-    python3 "$FAI/assets/workstation/kdbx.py" preflight
+    # This function runs in a tested subshell: Bash suppresses errexit there.
+    # Propagate failures explicitly, including pipeline failures via pipefail.
+    python3 "$FAI/assets/workstation/kdbx.py" preflight || exit 1
     if [ ! -s "$WORKSTATION_SECRETS/identity.json" ] || [ ! -s "$WORKSTATION_SECRETS/luks" ]; then
         echo "Workstation secrets were not extracted; aborting before partitioning." >&2; exit 1;
     fi
@@ -55,15 +57,15 @@ partition_workstation() {
     # This hook replaces FAI's standard partition task so selection can happen before
     # setup-storage. It fails closed on missing TTY, cancellation, EOF, or any check.
     python3 "$selector" select --tty /dev/console --output "$selection" --env-output "$selection_env" \
-        2>&1 | tee "$LOGDIR/disk-selection.log"
+        2>&1 | tee "$LOGDIR/disk-selection.log" || exit 1
 
     # The selector already revalidates once after persistence. Repeat it as the last
     # operation before setup-storage to minimize the selection-to-destruction race.
     python3 "$selector" revalidate --selection "$selection" \
-        2>&1 | tee -a "$LOGDIR/disk-selection.log"
+        2>&1 | tee -a "$LOGDIR/disk-selection.log" || exit 1
 
     # shellcheck disable=SC1090
-    source "$selection_env"
+    source "$selection_env" || exit 1
     # setup-storage's disklist/-D contract uses bare kernel names (sdb, nvme0n1),
     # while bootloader variables intentionally retain absolute /dev paths.
     # Accept one legacy /dev/ prefix defensively, then fail closed on any path.
@@ -88,21 +90,21 @@ partition_workstation() {
 
     # LUKS_BTRFS needs a 2G ESP plus an 8G (growable) root. Refuse a disk that
     # cannot hold the layout before setup-storage starts writing.
-    size=$(blockdev --getsize64 "$device")
+    size=$(blockdev --getsize64 "$device") || exit 1
     minimum=$((11 * 1024 * 1024 * 1024))
     [ "$size" -ge "$minimum" ] || {
         echo "Selected disk $device is $size bytes; at least 11 GiB is required (2 GiB ESP + 8 GiB root); 16 GiB or more is recommended." >&2
         exit 1
     }
 
-    setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR"
+    setup-storage -X -f "$config" -D "$disklist" -L "$LOGDIR" || exit 1
     [ -s "$LOGDIR/disk_var.sh" ] || { echo "setup-storage did not create disk_var.sh" >&2; exit 1; }
 
     # 10-luks-key rewrites crypttab to its final "none" form, so a retried or
     # re-run configure would lose setup-storage's temporary key path. Copy the
     # key BYTES; storing the path text here makes cryptsetup use that text as
     # the passphrase and no slot ever unlocks.
-    setup_key_path=$(awk 'NR==1 {print $3}' "$LOGDIR/crypttab")
+    setup_key_path=$(awk 'NR==1 {print $3}' "$LOGDIR/crypttab") || exit 1
     if [ -z "$setup_key_path" ] || [ "$setup_key_path" = "none" ]; then
         echo "crypttab does not reference a setup-storage LUKS key." >&2
         exit 1
@@ -111,13 +113,13 @@ partition_workstation() {
         echo "setup-storage LUKS key file is missing: $setup_key_path" >&2
         exit 1
     }
-    install -m 0600 "$setup_key_path" "$LOGDIR/luks-setup-key"
+    install -m 0600 "$setup_key_path" "$LOGDIR/luks-setup-key" || exit 1
 
     # setup-storage derives these values from disk1; make the independently selected
     # bootloader target explicit for every later script. Split disks are rejected.
-    sed -i '/^BOOT_DEVICE=/d;/^PHYSICAL_BOOT_DEVICES=/d' "$LOGDIR/disk_var.sh"
+    sed -i '/^BOOT_DEVICE=/d;/^PHYSICAL_BOOT_DEVICES=/d' "$LOGDIR/disk_var.sh" || exit 1
     printf 'BOOT_DEVICE=%q\nPHYSICAL_BOOT_DEVICES=%q\n' \
-        "$FAI_SELECTED_BOOT_KERNEL" "$FAI_SELECTED_BOOT_KERNEL" >> "$LOGDIR/disk_var.sh"
+        "$FAI_SELECTED_BOOT_KERNEL" "$FAI_SELECTED_BOOT_KERNEL" >> "$LOGDIR/disk_var.sh" || exit 1
     # The standard task must source these variables into FAI's parent shell.
     rm -f "$LOGDIR/skip.partition" "$LOGDIR/workstation-partition-failed"
 }

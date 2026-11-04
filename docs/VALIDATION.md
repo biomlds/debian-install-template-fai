@@ -12,10 +12,12 @@ payload scanning, mocked disk discovery, and regular-file Argon2id key rotation.
 The cryptsetup test skips when cryptsetup is unavailable; CI installs it.
 No automated test writes a real block device.
 
-Current local results: shell syntax, ShellCheck, YAML/Python compilation, FAI
-disk syntax, 8 configuration-contract tests, 18 recovery/input/scanner tests, 12 mocked
-disk-selector tests, and the regular-file Argon2id transition pass. The actual
-GitHub ISO build and the manual acceptance gates below are not yet verified.
+The suite includes behavioral checks for failed partition preflight/selection/
+revalidation, exhausted NFSROOT retries, same-disk ESP selection, empty-ESP repair,
+and signing/deploying a restored root's bootloader. Local tooling availability
+determines which checks can run; skipped cryptsetup/SSH checks are printed.
+The actual GitHub ISO build and the manual acceptance gates below are not yet
+verified.
 
 ISO workflow dispatch/tag builds pinned host tools (including sbctl), FAI NFSROOT,
 ISO/checksums, and scans extracted ISO plus nested filesystem contents. FAI 6.4
