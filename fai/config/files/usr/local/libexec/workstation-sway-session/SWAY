@@ -1,4 +1,9 @@
 #!/bin/sh
 set -eu
 dbus-update-activation-environment --systemd SSH_AUTH_SOCK SSH_AGENT_PID
+# An explicitly applied portable desktop owns app environment; keep the agent
+# established by workstation-sway and pass all compositor arguments through.
+if [ -x "$HOME/.local/bin/desktop-sway-session" ]; then
+    exec "$HOME/.local/bin/desktop-sway-session" "$@"
+fi
 exec sway "$@"

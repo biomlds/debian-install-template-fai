@@ -191,6 +191,8 @@ external-media repair, key loss, and limitations.
 
 ## Documentation
 
+- [Portable Sway desktop integration](docs/SWAY.md)
+
 - [Architecture](docs/ARCHITECTURE.md) and [FAI installer](docs/FAI.md)
 - [Storage](docs/STORAGE.md) and [LUKS](docs/LUKS.md)
 - [KeePassXC inputs](docs/KEEPASSXC.md) and [Secure Boot](docs/SECURE_BOOT.md)

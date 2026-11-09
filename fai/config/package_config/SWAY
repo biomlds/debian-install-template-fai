@@ -1,5 +1,13 @@
 PACKAGES install
 bemenu
+wofi
+fonts-dejavu-core
+gnome-themes-extra
+papirus-icon-theme
+policykit-1-gnome
+power-profiles-daemon
+qtwayland5
+qt6-wayland
 fonts-font-awesome
 fonts-noto
 fonts-noto-color-emoji
@@ -12,9 +20,11 @@ network-manager-gnome
 pavucontrol
 pipewire
 pipewire-audio
+pipewire-pulse
 slurp
 sway
 sway-backgrounds
+swaybg
 swayidle
 swaylock
 waybar
@@ -23,5 +33,6 @@ wl-clipboard
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-desktop-portal-wlr
+xdg-utils
 xserver-xorg
 xwayland
